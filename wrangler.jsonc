@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "zepp-cloud-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-31",
+  "vars": {
+    "ZEPP_USER_ID": "1234567890",
+    "ZEPP_REGION_HOST": "https://api-mifit-us3.zepp.com",
+    "USER_TIMEZONE": "Asia/Jakarta"
+  }
+}
