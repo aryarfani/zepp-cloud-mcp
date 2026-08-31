@@ -1,0 +1,7 @@
+{
+  "items": [
+    {"timestamp": 1788109200, "heartRate": 60, "source": "device", "deviceId": "synthetic-watch"},
+    {"time": 1788109260, "hr": 62, "source": "device", "deviceId": "synthetic-watch"},
+    {"timestamp": 1788195600, "heartRate": null, "source": "device", "deviceId": "synthetic-watch"}
+  ]
+}

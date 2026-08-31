@@ -1,0 +1,16 @@
+{
+  "data": {
+    "items": [
+      {
+        "date_time": "2026-08-31",
+        "deviceId": "synthetic-watch",
+        "summary": "eyJ0eiI6MjUyMDAsInNscCI6eyJzdCI6MTc4ODEwMjAwMCwiZWQiOjE3ODgxMzA4MDAsIndrIjoxMCwicmhyIjo1OCwic3MiOjg0LCJzdGFnZSI6W3sic3RhcnQiOjEzODAsInN0b3AiOjE0MzksIm1vZGUiOjV9LHsic3RhcnQiOjE0NDAsInN0b3AiOjE0OTksIm1vZGUiOjR9LHsic3RhcnQiOjE1MDAsInN0b3AiOjE1MjksIm1vZGUiOjExfSx7InN0YXJ0IjoxNTMwLCJzdG9wIjoxNTM5LCJtb2RlIjo3fV19LCJzdHAiOnsidHRsIjo3ODkwLCJjYWwiOjQ1NiwiZGlzIjo2MjMwfX0="
+      },
+      {
+        "date_time": "2026-08-30",
+        "deviceId": "synthetic-watch",
+        "summary": "eyJ0eiI6MjUyMDAsInNscCI6eyJzdCI6MTc4ODAxNTYwMCwiZWQiOjE3ODgwNDQ0MDAsIndrIjo1LCJyaHIiOjU5LCJzcyI6NzgsInN0YWdlIjpbeyJzdGFydCI6MTM4MCwic3RvcCI6MTQ5OSwibW9kZSI6NH1dfSwic3RwIjp7InR0bCI6NjAwMH19"
+      }
+    ]
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "eventType": "blood_oxygen",
+      "subType": "click",
+      "timestamp": 1788109200000,
+      "extra": "{\"spo2\": 97}",
+      "source": "device"
+    },
+    {
+      "eventType": "blood_oxygen",
+      "subType": "click",
+      "timestamp": 1788112800000,
+      "extra": "{\"spo2\": 96}",
+      "source": "device"
+    },
+    {
+      "eventType": "all_day_stress",
+      "timestamp": 1788109200000,
+      "avgStress": 31,
+      "minStress": 12,
+      "maxStress": 55,
+      "source": "device"
+    },
+    {
+      "eventType": "PaiHealthInfo",
+      "timestamp": 1788109200000,
+      "dailyPai": 18,
+      "maxHr": 176,
+      "restHr": 57,
+      "source": "device"
+    }
+  ]
+}
