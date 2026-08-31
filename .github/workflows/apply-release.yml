@@ -3,7 +3,7 @@ name: Apply release snapshot
 on:
   push:
     paths:
-      - .github/zepp-release.patch.gz.b64.part*
+      - .github/zepp-release.ready
 
 permissions:
   contents: write
@@ -24,7 +24,7 @@ jobs:
       - name: Apply release snapshot
         run: |
           git apply /tmp/zepp-release.patch
-          rm -f .github/zepp-release.patch.gz.b64.part* .github/workflows/apply-release.yml
+          rm -f .github/zepp-release.patch.gz.b64.part* .github/zepp-release.ready .github/workflows/apply-release.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
