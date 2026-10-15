@@ -83,5 +83,84 @@ CREATE TABLE sync_runs (
 );
 CREATE INDEX idx_sync_runs_started ON sync_runs (started_at);
 `
-  }
+  },
+  {
+    version: 2,
+    name: "weight_bp_charge_emotion_streams",
+    sql: `
+CREATE TABLE weight_records (
+  measured_at TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  weight_kg REAL NOT NULL,
+  height_cm REAL,
+  bmi REAL,
+  body_style INTEGER,
+  raw_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_weight_date ON weight_records (date);
+
+CREATE TABLE blood_pressure (
+  measured_at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  date TEXT NOT NULL,
+  systolic_mmhg INTEGER NOT NULL,
+  diastolic_mmhg INTEGER NOT NULL,
+  pulse_bpm INTEGER,
+  raw_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (measured_at, source)
+);
+CREATE INDEX idx_bp_date ON blood_pressure (date);
+
+CREATE TABLE charge_samples (
+  ts_ms INTEGER PRIMARY KEY,
+  date TEXT NOT NULL,
+  total REAL NOT NULL,
+  mental REAL,
+  physical REAL,
+  status INTEGER
+);
+CREATE INDEX idx_charge_samples_date ON charge_samples (date);
+
+CREATE TABLE charge_insights (
+  ts_ms INTEGER PRIMARY KEY,
+  date TEXT NOT NULL,
+  insight_type INTEGER,
+  insight REAL,
+  insight_id INTEGER,
+  raw_json TEXT NOT NULL
+);
+CREATE INDEX idx_charge_insights_date ON charge_insights (date);
+
+CREATE TABLE emotion_events (
+  source TEXT NOT NULL,
+  ts_ms INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  value REAL,
+  raw_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (source, ts_ms)
+);
+CREATE INDEX idx_emotion_date ON emotion_events (date);
+
+CREATE TABLE event_streams (
+  stream_id TEXT PRIMARY KEY,
+  family TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  sub_type TEXT,
+  decoded_by TEXT,
+  status TEXT NOT NULL,
+  latest_event_at TEXT,
+  window_days INTEGER NOT NULL,
+  checked_at TEXT NOT NULL
+);
+
+ALTER TABLE sync_runs ADD COLUMN weight_rows INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sync_runs ADD COLUMN blood_pressure_rows INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sync_runs ADD COLUMN charge_sample_rows INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sync_runs ADD COLUMN charge_insight_rows INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sync_runs ADD COLUMN emotion_rows INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sync_runs ADD COLUMN event_stream_rows INTEGER NOT NULL DEFAULT 0;
+`  }
 ];

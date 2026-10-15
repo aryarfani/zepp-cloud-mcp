@@ -1,7 +1,12 @@
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { BloodPressureEntry } from "../zepp/blood-pressure";
+import type { ChargeInsight, ChargeSample } from "../zepp/charge";
+import type { EmotionEntry } from "../zepp/emotion";
+import type { StreamAvailability } from "../zepp/event-manifest";
 import type { DailySummary, SleepNight } from "../zepp/types";
+import type { WeightEntry } from "../zepp/weight";
 import type { StrengthSet } from "../zepp/strength";
 import type { WorkoutSummary } from "../zepp/workouts";
 import { MIGRATIONS, type Migration } from "./migrations";
@@ -10,7 +15,15 @@ type Param = string | number | null;
 
 export type SyncTrigger = "startup" | "scheduled" | "manual";
 
-export interface SyncRunCounts { daily: number; sleep: number; workouts: number; strength_sets: number; warnings: number }
+export interface SyncRunCounts {
+  daily: number; sleep: number; workouts: number; strength_sets: number;
+  weight: number; blood_pressure: number; charge_samples: number; charge_insights: number; emotion_events: number; event_streams: number;
+  warnings: number;
+}
+
+export const EMPTY_COUNTS: SyncRunCounts = {
+  daily: 0, sleep: 0, workouts: 0, strength_sets: 0, weight: 0, blood_pressure: 0, charge_samples: 0, charge_insights: 0, emotion_events: 0, event_streams: 0, warnings: 0
+};
 
 export interface SyncRunRow {
   id: number;
@@ -34,6 +47,12 @@ export interface StoreStats {
   sleep: TableCoverage;
   workouts: TableCoverage;
   strength_sets: { rows: number; workouts: number };
+  weight_records: TableCoverage;
+  blood_pressure: TableCoverage;
+  charge_samples: TableCoverage;
+  charge_insights: TableCoverage;
+  emotion_events: TableCoverage;
+  event_streams: { rows: number; with_data: number; checked_at: string | null };
   sync_runs: { rows: number };
   db_bytes: number | null;
 }
@@ -52,7 +71,9 @@ function mapRun(r: Record<string, unknown>): SyncRunRow {
     range_end: String(r.range_end),
     counts: {
       daily: Number(r.daily_rows), sleep: Number(r.sleep_rows), workouts: Number(r.workout_rows),
-      strength_sets: Number(r.strength_set_rows), warnings: Number(r.warning_count)
+      strength_sets: Number(r.strength_set_rows), weight: Number(r.weight_rows), blood_pressure: Number(r.blood_pressure_rows),
+      charge_samples: Number(r.charge_sample_rows), charge_insights: Number(r.charge_insight_rows), emotion_events: Number(r.emotion_rows),
+      event_streams: Number(r.event_stream_rows), warnings: Number(r.warning_count)
     },
     error_kind: r.error_kind === null ? null : String(r.error_kind),
     error_message: r.error_message === null ? null : String(r.error_message)
@@ -184,6 +205,78 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     return row?.c === 1;
   }
 
+  upsertWeight(entries: readonly WeightEntry[], updatedAt: string): number {
+    const stmt = this.db.prepare(`
+INSERT INTO weight_records (measured_at, date, weight_kg, height_cm, bmi, body_style, raw_json, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(measured_at) DO UPDATE SET
+  date = excluded.date, weight_kg = excluded.weight_kg, height_cm = excluded.height_cm, bmi = excluded.bmi,
+  body_style = excluded.body_style, raw_json = excluded.raw_json, updated_at = excluded.updated_at`);
+    return this.transaction(() => {
+      for (const { record: r, raw } of entries) stmt.run(r.measured_at, r.date, r.weight_kg, n(r.height_cm), n(r.bmi), n(r.body_style), JSON.stringify(raw), updatedAt);
+      return entries.length;
+    });
+  }
+
+  upsertBloodPressure(entries: readonly BloodPressureEntry[], updatedAt: string): number {
+    const stmt = this.db.prepare(`
+INSERT INTO blood_pressure (measured_at, source, date, systolic_mmhg, diastolic_mmhg, pulse_bpm, raw_json, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(measured_at, source) DO UPDATE SET
+  date = excluded.date, systolic_mmhg = excluded.systolic_mmhg, diastolic_mmhg = excluded.diastolic_mmhg,
+  pulse_bpm = excluded.pulse_bpm, raw_json = excluded.raw_json, updated_at = excluded.updated_at`);
+    return this.transaction(() => {
+      for (const { reading: r, raw } of entries) stmt.run(r.measured_at, r.source, r.date, r.systolic_mmhg, r.diastolic_mmhg, n(r.pulse_bpm), JSON.stringify(raw), updatedAt);
+      return entries.length;
+    });
+  }
+
+  upsertChargeSamples(samples: readonly ChargeSample[]): number {
+    const stmt = this.db.prepare(`
+INSERT INTO charge_samples (ts_ms, date, total, mental, physical, status) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(ts_ms) DO UPDATE SET date = excluded.date, total = excluded.total, mental = excluded.mental,
+  physical = excluded.physical, status = excluded.status`);
+    return this.transaction(() => {
+      for (const s of samples) stmt.run(s.ts_ms, s.date, s.total, n(s.mental), n(s.physical), n(s.status));
+      return samples.length;
+    });
+  }
+
+  upsertChargeInsights(insights: readonly ChargeInsight[]): number {
+    const stmt = this.db.prepare(`
+INSERT INTO charge_insights (ts_ms, date, insight_type, insight, insight_id, raw_json) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(ts_ms) DO UPDATE SET date = excluded.date, insight_type = excluded.insight_type, insight = excluded.insight,
+  insight_id = excluded.insight_id, raw_json = excluded.raw_json`);
+    return this.transaction(() => {
+      for (const i of insights) stmt.run(i.ts_ms, i.date, n(i.insight_type), n(i.insight), n(i.insight_id), JSON.stringify(i.raw));
+      return insights.length;
+    });
+  }
+
+  upsertEmotion(entries: readonly EmotionEntry[], updatedAt: string): number {
+    const stmt = this.db.prepare(`
+INSERT INTO emotion_events (source, ts_ms, date, value, raw_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(source, ts_ms) DO UPDATE SET date = excluded.date, value = excluded.value, raw_json = excluded.raw_json,
+  updated_at = excluded.updated_at`);
+    return this.transaction(() => {
+      for (const e of entries) stmt.run(e.event.source, e.ts_ms, e.event.date, n(e.event.value), JSON.stringify(e.raw), updatedAt);
+      return entries.length;
+    });
+  }
+
+  upsertEventStreams(streams: readonly StreamAvailability[], windowDays: number, checkedAt: string): number {
+    const stmt = this.db.prepare(`
+INSERT INTO event_streams (stream_id, family, event_type, sub_type, decoded_by, status, latest_event_at, window_days, checked_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(stream_id) DO UPDATE SET family = excluded.family, event_type = excluded.event_type, sub_type = excluded.sub_type,
+  decoded_by = excluded.decoded_by, status = excluded.status, latest_event_at = excluded.latest_event_at,
+  window_days = excluded.window_days, checked_at = excluded.checked_at`);
+    return this.transaction(() => {
+      for (const s of streams) stmt.run(s.id, s.family, s.event_type, s.sub_type, s.decoded_by, s.status, s.latest_event_at, windowDays, checkedAt);
+      return streams.length;
+    });
+  }
+
   // ---- sync runs ---------------------------------------------------------------------------------------------------
   startRun(trigger: SyncTrigger, rangeStart: string, rangeEnd: string, startedAt: string): number {
     const r = this.db.prepare("INSERT INTO sync_runs (trigger, started_at, range_start, range_end) VALUES (?, ?, ?, ?)").run(trigger, startedAt, rangeStart, rangeEnd);
@@ -193,9 +286,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   finishRun(id: number, result: { ok: boolean; status: string; counts: SyncRunCounts; error_kind?: string; error_message?: string }, finishedAt: string): void {
     this.db.prepare(`
 UPDATE sync_runs SET finished_at = ?, ok = ?, status = ?, daily_rows = ?, sleep_rows = ?, workout_rows = ?, strength_set_rows = ?,
+  weight_rows = ?, blood_pressure_rows = ?, charge_sample_rows = ?, charge_insight_rows = ?, emotion_rows = ?, event_stream_rows = ?,
   warning_count = ?, error_kind = ?, error_message = ? WHERE id = ?`).run(
       finishedAt, result.ok ? 1 : 0, result.status, result.counts.daily, result.counts.sleep, result.counts.workouts,
-      result.counts.strength_sets, result.counts.warnings, result.error_kind ?? null, result.error_message ?? null, id);
+      result.counts.strength_sets, result.counts.weight, result.counts.blood_pressure, result.counts.charge_samples,
+      result.counts.charge_insights, result.counts.emotion_events, result.counts.event_streams,
+      result.counts.warnings, result.error_kind ?? null, result.error_message ?? null, id);
   }
 
   /** Runs left open by a crash or restart are closed as failed so they cannot look like a live run. */
@@ -230,6 +326,8 @@ UPDATE sync_runs SET finished_at = ?, ok = 0, status = 'interrupted', error_kind
   stats(): StoreStats {
     const sets = this.db.prepare("SELECT COUNT(*) AS rows, COUNT(DISTINCT workout_id) AS workouts FROM strength_sets").get() as { rows: number; workouts: number };
     const runs = this.db.prepare("SELECT COUNT(*) AS rows FROM sync_runs").get() as { rows: number };
+    const streams = this.db.prepare("SELECT COUNT(*) AS rows, COALESCE(SUM(status = 'has_data'), 0) AS with_data, MAX(checked_at) AS checked_at FROM event_streams").get() as
+      { rows: number; with_data: number; checked_at: string | null };
     let bytes: number | null = null;
     if (this.file !== ":memory:" && existsSync(this.file)) {
       // In WAL mode recent writes live in the -wal file until checkpointed, so count both.
@@ -241,6 +339,12 @@ UPDATE sync_runs SET finished_at = ?, ok = 0, status = 'interrupted', error_kind
       sleep: this.coverage("sleep", "sleep_date"),
       workouts: this.coverage("workouts", "started_date"),
       strength_sets: { rows: Number(sets.rows), workouts: Number(sets.workouts) },
+      weight_records: this.coverage("weight_records", "date"),
+      blood_pressure: this.coverage("blood_pressure", "date"),
+      charge_samples: this.coverage("charge_samples", "date"),
+      charge_insights: this.coverage("charge_insights", "date"),
+      emotion_events: this.coverage("emotion_events", "date"),
+      event_streams: { rows: Number(streams.rows), with_data: Number(streams.with_data), checked_at: streams.checked_at },
       sync_runs: { rows: Number(runs.rows) },
       db_bytes: bytes
     };

@@ -11,7 +11,7 @@ export interface SyncStatus {
   last_run: (Omit<SyncRunRow, "finished_at"> & { finished_at: string | null; duration_s: number | null }) | null;
   last_success_at: string | null;
   recent_runs: Array<Pick<SyncRunRow, "id" | "trigger" | "started_at" | "ok" | "status" | "error_kind">>;
-  tables: Pick<StoreStats, "daily_summary" | "sleep" | "workouts" | "strength_sets" | "sync_runs">;
+  tables: Omit<StoreStats, "schema_version" | "db_bytes">;
   db: { file: string; schema_version: number; size_bytes: number | null };
 }
 
@@ -65,7 +65,11 @@ export function createSyncService(deps: {
         last_run: last ? { ...last, duration_s: seconds(last) } : null,
         last_success_at: store.lastSuccessfulRun()?.finished_at ?? null,
         recent_runs: store.recentRuns(5).map(r => ({ id: r.id, trigger: r.trigger, started_at: r.started_at, ok: r.ok, status: r.status, error_kind: r.error_kind })),
-        tables: { daily_summary: stats.daily_summary, sleep: stats.sleep, workouts: stats.workouts, strength_sets: stats.strength_sets, sync_runs: stats.sync_runs },
+        tables: {
+          daily_summary: stats.daily_summary, sleep: stats.sleep, workouts: stats.workouts, strength_sets: stats.strength_sets,
+          weight_records: stats.weight_records, blood_pressure: stats.blood_pressure, charge_samples: stats.charge_samples,
+          charge_insights: stats.charge_insights, emotion_events: stats.emotion_events, event_streams: stats.event_streams, sync_runs: stats.sync_runs
+        },
         db: { file: config.dbPath, schema_version: stats.schema_version, size_bytes: stats.db_bytes }
       };
     }

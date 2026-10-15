@@ -1,12 +1,17 @@
 import { ZeppError } from "../errors";
 import type { ServiceContext } from "../services";
-import { parseDateRange, previousIsoDate } from "../time";
+import { addIsoDays, parseDateRange, previousIsoDate } from "../time";
 import { fetchBandData } from "../zepp/activity";
+import { fetchBloodPressureEntries } from "../zepp/blood-pressure";
+import { fetchChargeInsights, fetchChargeSamples } from "../zepp/charge";
+import { fetchEmotionEntries } from "../zepp/emotion";
+import { probeStreams } from "../zepp/event-manifest";
 import { localDateFromMs } from "../zepp/normalize";
 import { selectSleepForRange } from "../zepp/sleep";
 import { parseStrengthLap } from "../zepp/strength";
+import { fetchWeightEntries } from "../zepp/weight";
 import { fetchWorkoutHistoryWithRaw, fetchWorkoutRaw } from "../zepp/workouts";
-import type { SyncRunCounts, SyncTrigger, ZeppStore } from "../store/store";
+import { EMPTY_COUNTS, type SyncRunCounts, type SyncTrigger, type ZeppStore } from "../store/store";
 
 export interface SyncOptions {
   backfillDays: number;
@@ -33,13 +38,9 @@ export interface SyncResult {
 
 const STRENGTH_ZEPP_TYPE = 52;
 const FATAL_KINDS = new Set(["auth_expired", "upstream_rate_limited"]);
+/** How far back the event stream availability probe looks. */
+const MANIFEST_WINDOW_DAYS = 90;
 const defaultSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
-
-export function addIsoDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-  const t = new Date(Date.UTC(y, m - 1, d + days));
-  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")}`;
-}
 
 function describeError(error: unknown): { kind: string; message: string } {
   if (error instanceof ZeppError) {
@@ -78,9 +79,17 @@ export async function runSync(
   const end = localDateFromMs(startedMs, tz);
   const start = addIsoDays(end, -(days - 1));
   const runId = store.startRun(trigger, start, end, new Date(startedMs).toISOString());
-  const counts: SyncRunCounts = { daily: 0, sleep: 0, workouts: 0, strength_sets: 0, warnings: 0 };
+  const counts: SyncRunCounts = { ...EMPTY_COUNTS };
   let upstreamCalls = 0;
   const pause = async () => { if (upstreamCalls > 0 && options.requestDelayMs > 0) await sleep(options.requestDelayMs); upstreamCalls++; };
+  /** Optional data types: an unreadable response is a warning (the rest of the sync continues); auth and rate limits still stop the run. */
+  const optionalStep = async (label: string, step: () => Promise<void>) => {
+    try { await step(); }
+    catch (e) {
+      if (e instanceof ZeppError && !FATAL_KINDS.has(e.kind)) { counts.warnings++; log(`${label} skipped (${e.kind})`); return; }
+      throw e;
+    }
+  };
   log(`sync ${trigger} #${runId}: ${start}..${end} (${days} days${firstRun ? ", backfill" : ""})`);
 
   let failure: { kind: string; message: string } | undefined;
@@ -115,7 +124,40 @@ export async function runSync(
           throw e;
         }
       }
+
+      await optionalStep("hybrid charge", async () => {
+        await pause();
+        const samples = await fetchChargeSamples(ctx, range);
+        await pause();
+        const insights = await fetchChargeInsights(ctx, range);
+        counts.charge_samples += store.upsertChargeSamples(samples);
+        counts.charge_insights += store.upsertChargeInsights(insights);
+      });
+      await optionalStep("emotion events", async () => {
+        const { entries, skipped } = await fetchEmotionEntries(ctx, range, pause);
+        counts.emotion_events += store.upsertEmotion(entries, new Date(now()).toISOString());
+        if (skipped) counts.warnings++;
+      });
+      await optionalStep("blood pressure", async () => {
+        const { entries, skipped } = await fetchBloodPressureEntries(ctx, range, pause);
+        counts.blood_pressure += store.upsertBloodPressure(entries, new Date(now()).toISOString());
+        if (skipped) counts.warnings++;
+      });
     }
+
+    // Weigh-ins are sparse: one request (up to 300 records) for the whole run window.
+    const fullRange = parseDateRange(start, end, tz, 366);
+    await optionalStep("weight", async () => {
+      await pause();
+      const { entries, skipped } = await fetchWeightEntries(ctx, fullRange.fromSec, fullRange.toSec);
+      counts.weight += store.upsertWeight(entries, new Date(now()).toISOString());
+      if (skipped) counts.warnings++;
+    });
+    // Which event streams exist / have data (discovery); one tiny request per stream.
+    await optionalStep("event streams", async () => {
+      const manifest = await probeStreams(ctx, MANIFEST_WINDOW_DAYS, now(), pause);
+      counts.event_streams += store.upsertEventStreams(manifest.streams, manifest.window_days, manifest.checked_at);
+    });
   } catch (e) {
     failure = describeError(e);
     log(`sync #${runId} failed: ${failure.kind}`);
@@ -125,9 +167,10 @@ export async function runSync(
   const ok = failure === undefined;
   const status = failure ? failure.kind : counts.warnings > 0 ? "ok_with_warnings" : "ok";
   store.finishRun(runId, { ok, status, counts, ...(failure ? { error_kind: failure.kind, error_message: failure.message } : {}) }, new Date(finishedMs).toISOString());
-  log(`sync #${runId} ${status}: daily ${counts.daily}, sleep ${counts.sleep}, workouts ${counts.workouts}, strength sets ${counts.strength_sets}, ${finishedMs - startedMs} ms`);
+  log(`sync #${runId} ${status}: daily ${counts.daily}, sleep ${counts.sleep}, workouts ${counts.workouts}, strength sets ${counts.strength_sets}, weight ${counts.weight}, bp ${counts.blood_pressure}, charge ${counts.charge_samples}/${counts.charge_insights}, emotion ${counts.emotion_events}, streams ${counts.event_streams}, warnings ${counts.warnings}, ${finishedMs - startedMs} ms`);
   return {
     run_id: runId, trigger, ok, status, range: { start, end }, counts, duration_ms: finishedMs - startedMs,
     ...(failure ? { error: failure } : {})
   };
 }
+export { addIsoDays };

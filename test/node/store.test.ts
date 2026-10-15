@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MIGRATIONS } from "../../src/store/migrations";
-import { ZeppStore } from "../../src/store/store";
+import { EMPTY_COUNTS, ZeppStore } from "../../src/store/store";
 import { normalizeWorkoutSummary } from "../../src/zepp/workouts";
 
 const stores: ZeppStore[] = [];
@@ -29,14 +29,38 @@ describe("migrations", () => {
       const a = open(file);
       a.upsertDaily([{ date: "2026-08-31", steps: 10 }], "t");
       a.close();
-      const next = [...MIGRATIONS, { version: 2, name: "test column", sql: "ALTER TABLE daily_summary ADD COLUMN note TEXT;" }];
+      const next = [...MIGRATIONS, { version: 3, name: "test column", sql: "ALTER TABLE daily_summary ADD COLUMN note TEXT;" }];
       const b = open(file, next);
-      expect(b.schemaVersion()).toBe(2);
+      expect(b.schemaVersion()).toBe(3);
       expect(b.stats().daily_summary.rows).toBe(1);
       b.close();
       const c = open(file, next);
-      expect(c.schemaVersion()).toBe(2);
+      expect(c.schemaVersion()).toBe(3);
       expect(statSync(file).size).toBeGreaterThan(0);
+    } finally {
+      closeAll();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades a v1 database to v2 without losing data (new tables empty, old sync runs get zero counts)", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "zepp-db-"));
+    const file = path.join(dir, "zepp.db");
+    try {
+      const v1 = open(file, [MIGRATIONS[0]!]);
+      expect(v1.schemaVersion()).toBe(1);
+      v1.upsertDaily([{ date: "2026-08-31", steps: 10 }], "t");
+      const id = v1.startRun("manual", "2026-08-31", "2026-08-31", "2026-08-31T01:00:00.000Z");
+      (v1 as any).db.prepare("UPDATE sync_runs SET finished_at = ?, ok = 1, status = 'ok', daily_rows = 1 WHERE id = ?").run("2026-08-31T01:00:01.000Z", id);
+      v1.close();
+      const v2 = open(file);
+      expect(v2.schemaVersion()).toBe(2);
+      const stats = v2.stats();
+      expect(stats.daily_summary.rows).toBe(1);
+      expect(stats.weight_records.rows).toBe(0);
+      expect(stats.charge_samples.rows).toBe(0);
+      expect(stats.event_streams).toEqual({ rows: 0, with_data: 0, checked_at: null });
+      expect(v2.lastRun()!.counts).toEqual({ ...EMPTY_COUNTS, daily: 1 });
     } finally {
       closeAll();
       rmSync(dir, { recursive: true, force: true });
@@ -59,10 +83,10 @@ describe("migrations", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "zepp-db-"));
     const file = path.join(dir, "zepp.db");
     try {
-      const bad = [...MIGRATIONS, { version: 2, name: "bad", sql: "CREATE TABLE half_done (a INT); SELECT * FROM missing_table_xyz;" }];
+      const bad = [...MIGRATIONS, { version: 3, name: "bad", sql: "CREATE TABLE half_done (a INT); SELECT * FROM missing_table_xyz;" }];
       expect(() => new ZeppStore(file, bad)).toThrow();
       const s = open(file);
-      expect(s.schemaVersion()).toBe(1);
+      expect(s.schemaVersion()).toBe(MIGRATIONS.at(-1)!.version);
     } finally {
       closeAll();
       rmSync(dir, { recursive: true, force: true });
@@ -113,7 +137,7 @@ describe("sync runs", () => {
     expect(s.closeInterruptedRuns("2026-08-31T00:01:00.000Z")).toBe(1);
     expect(s.lastRun()).toMatchObject({ id, ok: false, status: "interrupted", error_kind: "interrupted" });
     const id2 = s.startRun("startup", "2026-08-25", "2026-08-31", "2026-08-31T01:00:00.000Z");
-    s.finishRun(id2, { ok: true, status: "ok", counts: { daily: 1, sleep: 1, workouts: 2, strength_sets: 3, warnings: 0 } }, "2026-08-31T01:00:05.000Z");
+    s.finishRun(id2, { ok: true, status: "ok", counts: { ...EMPTY_COUNTS, daily: 1, sleep: 1, workouts: 2, strength_sets: 3 } }, "2026-08-31T01:00:05.000Z");
     expect(s.lastSuccessfulRun()).toMatchObject({ id: id2, counts: { workouts: 2, strength_sets: 3 } });
     expect(s.recentRuns(5).map(r => r.id)).toEqual([id2, id]);
   });
