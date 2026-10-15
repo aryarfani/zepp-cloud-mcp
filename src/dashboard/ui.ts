@@ -122,16 +122,17 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .sico svg{width:17px;height:17px}
 .sico.lg{width:46px;height:46px;border-radius:13px}.sico.lg svg{width:25px;height:25px}
 .f-run{--c:#34d399}.f-walk{--c:#a78bfa}.f-bike{--c:#60a5fa}.f-swim{--c:#22d3ee}.f-str{--c:#fb7185}.f-tm{--c:#2dd4bf}.f-gen{--c:#f5b25e}
-.wrow{flex:none;display:flex;align-items:center;gap:10px;padding:6px 8px;min-height:46px;border-radius:11px;border:1px solid transparent;transition:background .12s,border-color .12s}
+.wrow{flex:none;display:flex;align-items:center;gap:12px;padding:9px 12px;min-height:84px;border-radius:11px;border:1px solid transparent;transition:background .12s,border-color .12s}
 .wrow:hover{background:var(--panel2)}
-.wrow.sel{background:linear-gradient(90deg,rgba(45,212,191,.14),rgba(167,139,250,.07));border-color:rgba(45,212,191,.4)}
+.wrow:focus-visible{outline:none;border-color:var(--line2);background:var(--panel2)}
+.wrow.sel,.wrow.sel:focus-visible{background:linear-gradient(90deg,rgba(45,212,191,.14),rgba(167,139,250,.07));border-color:rgba(45,212,191,.4)}
 .wmain{flex:1;min-width:0}
 .wrow .t{font-weight:580;font-size:.88rem;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wrow .sub{font-size:.74rem;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wrow .r{text-align:right;color:var(--muted);font-size:.78rem;white-space:nowrap;line-height:1.3;font-variant-numeric:tabular-nums}
 .wrow .r.lead{display:flex;align-items:center;justify-content:flex-end;gap:9px}
 .wrow .r .rt{text-align:right}
-.rthumb{flex:none;width:48px;height:34px;border-radius:8px;background:#0a0d12;border:1px solid var(--line)}
+.rthumb{flex:none;width:64px;height:64px;border-radius:14px;background:#0b0e14;border:1px solid var(--line)}
 .wrow .r .pv{color:var(--text);font-weight:650;font-size:.9rem}
 .wrow .r .sv{font-size:.72rem;color:var(--faint)}
 .hero{display:flex;align-items:center;gap:14px;padding:16px 18px;margin-bottom:12px;border-radius:var(--r);border:1px solid var(--line2);background:radial-gradient(520px 160px at 100% 0,rgba(45,212,191,.18),transparent 70%),radial-gradient(420px 160px at 0 100%,rgba(167,139,250,.14),transparent 70%),var(--panel);box-shadow:var(--shadow)}
@@ -167,9 +168,9 @@ svg.route{position:absolute;inset:0;width:100%;height:100%;display:block;pointer
 .bm .m-p{fill:#ef4444;stroke:#05070b;stroke-width:.6;filter:drop-shadow(0 0 2px rgba(239,68,68,.45))}
 .bm .m-s{fill:#f59e0b;stroke:#05070b;stroke-width:.6}
 .bm .m-b{fill:#384050;stroke:#05070b;stroke-width:.6}
-.bm-sm{width:auto;height:34px;flex:none}
-.bm-sm .m-n{stroke-width:1}
-.bm-sm .m-p,.bm-sm .m-s,.bm-sm .m-b{stroke-width:1}
+.bm-sm{width:35px;height:62px;flex:none}
+.bm-sm .m-n{stroke-width:1.4}
+.bm-sm .m-p,.bm-sm .m-s,.bm-sm .m-b{stroke-width:1.4}
 .bm-sm .m-p{filter:none}
 .bm-card .bm-body{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
 .bm-fig{flex:0 1 330px;min-width:220px}
@@ -721,11 +722,15 @@ export const DASHBOARD_JS = String.raw`(function () {
   }
   /** A GPS route as a tiny dark SVG polyline. The server sends only the normalised shape (no coordinates, no tiles). */
   function routeThumbEl(t) {
-    var pad = 7, pts = t.pts.map(function (p) { return (p[0] + pad).toFixed(1) + "," + (p[1] + pad).toFixed(1); }), a = t.pts[0], z = t.pts[t.pts.length - 1];
-    return s("svg", { "class": "rthumb", viewBox: "0 0 " + (t.w + pad * 2) + " " + (t.h + pad * 2), role: "img", "aria-label": "Route shape", preserveAspectRatio: "xMidYMid meet" }, [
-      s("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--teal)", "stroke-width": "4", "stroke-linejoin": "round", "stroke-linecap": "round" }),
-      s("circle", { cx: a[0] + pad, cy: a[1] + pad, r: 4.2, fill: "var(--good)" }),
-      s("circle", { cx: z[0] + pad, cy: z[1] + pad, r: 4.2, fill: "var(--bad)" })
+    // 64px square tile: faint street-like lines behind one clean route line, drawn at its true aspect ratio with padding all round
+    var S = 64, pad = 11, k = (S - pad * 2) / Math.max(t.w, t.h, 1), ox = (S - t.w * k) / 2, oy = (S - t.h * k) / 2;
+    var pts = t.pts.map(function (p) { return (ox + p[0] * k).toFixed(1) + "," + (oy + p[1] * k).toFixed(1); }), a = t.pts[0];
+    var street = { fill: "none", stroke: "rgba(255,255,255,.07)", "stroke-width": "2", "stroke-linecap": "round" };
+    return s("svg", { "class": "rthumb", width: S, height: S, viewBox: "0 0 " + S + " " + S, role: "img", "aria-label": "Route shape", preserveAspectRatio: "xMidYMid meet" }, [
+      s("path", Object.assign({ d: "M-2 20L66 14M-2 46L66 52M22 -2L18 66M45 -2L50 66" }, street)),
+      s("path", Object.assign({ d: "M-2 33L66 31M33 -2L32 66", "stroke-width": "3.2" }, street)),
+      s("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--teal)", "stroke-width": "2.6", "stroke-linejoin": "round", "stroke-linecap": "round" }),
+      s("circle", { cx: ox + a[0] * k, cy: oy + a[1] * k, r: 3.4, fill: "var(--good)", stroke: "#05070b", "stroke-width": "1.2" })
     ]);
   }
   function renderDetail(pane, id, token) {
@@ -794,7 +799,7 @@ export const DASHBOARD_JS = String.raw`(function () {
   ];
   // body parts that carry no muscle data (head, hands, knees, feet); drawn in a darker grey
   var BM_BASE = ["M50 5C44 5 40.5 9.5 40.5 15.5C40.5 22 44 26 50 26C56 26 59.5 22 59.5 15.5C59.5 9.5 56 5 50 5Z", "M24 121L30 121L29 130C28 133 25.5 133 24.5 130Z", "M35.5 175L43 175L42.5 181L36 181Z", "M36.5 219L41.5 219L44 226L35 226Z"];
-  var BM_FIG_W = 100, BM_FIG_GAP = 14;
+  var BM_FIG_W = 100, BM_FIG_GAP = 14, BM_SM_H = 62;
   function bmFigure(shapes, ctx) {
     var half = function (mirror) {
       var g = s("g", mirror ? { transform: "translate(100 0) scale(-1 1)" } : null);
@@ -820,9 +825,13 @@ export const DASHBOARD_JS = String.raw`(function () {
     var ctx = { p: {}, s: {}, titles: size !== "sm" };
     (mus.p || []).forEach(function (m) { ctx.p[m] = true; });
     (mus.s || []).forEach(function (m) { if (!ctx.p[m]) ctx.s[m] = true; });
-    var W = BM_FIG_W * 2 + BM_FIG_GAP;
-    var svg = s("svg", { "class": "bm bm-" + (size || "lg"), viewBox: "20 3 " + (W - 40) + " 226", role: "img", preserveAspectRatio: "xMidYMid meet" });
-    var back = s("g", { transform: "translate(" + (BM_FIG_W + BM_FIG_GAP) + " 0)" });
+    var sm = size === "sm";
+    // The figures are about 53 wide and 221 tall. The compact version crops tightly around the two bodies and has an explicit
+    // pixel size with the same aspect as its viewBox, so nothing in the row can stretch or squeeze it.
+    var shift = sm ? 62 : BM_FIG_W + BM_FIG_GAP, vbW = sm ? shift + 53 + 6 : BM_FIG_W * 2 + BM_FIG_GAP - 40;
+    var svg = s("svg", { "class": "bm bm-" + (size || "lg"), viewBox: (sm ? 21 : 20) + " 3 " + vbW + " 226", role: "img", preserveAspectRatio: "xMidYMid meet" });
+    if (sm) { svg.setAttribute("height", String(BM_SM_H)); svg.setAttribute("width", String(Math.round(BM_SM_H * vbW / 226))); }
+    var back = s("g", { transform: "translate(" + shift + " 0)" });
     back.appendChild(bmFigure(BM_BACK, ctx));
     svg.appendChild(bmFigure(BM_FRONT, ctx)); svg.appendChild(back);
     var names = function (list) { return (list || []).map(function (m) { return BM_LABEL[m] || m; }).join(", "); };

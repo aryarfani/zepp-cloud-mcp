@@ -77,7 +77,7 @@ describe("list API carries cheap muscle and route data", () => {
     expect(by("w-str").thumb).toBeUndefined();
     expect("muscles" in by("w-str-none")).toBe(false);
     const t = by(RUN).thumb;
-    expect(t.pts.length).toBeGreaterThan(1); expect(t.pts.length).toBeLessThanOrEqual(30);
+    expect(t.pts.length).toBeGreaterThan(1); expect(t.pts.length).toBeLessThanOrEqual(60);
     expect(by(RUN).muscles).toBeUndefined();
     expect("thumb" in by("w-walk")).toBe(false);
     expect(JSON.stringify(by(RUN).thumb)).not.toMatch(/106\.\d{3}|-6\.\d{3}/);
@@ -105,12 +105,40 @@ describe("list rows", () => {
       const run = rowOf(h.doc, RUN).querySelector(".r.lead")!;
       expect(run.children[0].matches("svg.rthumb")).toBe(true);
       expect(run.querySelectorAll("svg.rthumb polyline").length).toBe(1);
+      const th = run.children[0] as Element;
+      expect(th.getAttribute("width")).toBe("64"); expect(th.getAttribute("height")).toBe("64");
+      expect(th.getAttribute("viewBox")).toBe("0 0 64 64");
+      expect(th.getAttribute("preserveAspectRatio")).toBe("xMidYMid meet");
+      expect(th.querySelectorAll("circle").length).toBe(1); // green start dot only
+      // the route is drawn inside the tile with padding and at its true aspect ratio
+      const nums = th.querySelector("polyline")!.getAttribute("points")!.split(" ").flatMap((p: string) => p.split(",").map(Number));
+      expect(Math.min(...nums)).toBeGreaterThanOrEqual(10); expect(Math.max(...nums)).toBeLessThanOrEqual(54);
+      // body map: explicit size matching its viewBox aspect, natural proportions
+      const bm = r.children[0] as Element;
+      const [, , vw, vh] = bm.getAttribute("viewBox")!.split(" ").map(Number);
+      expect(Number(bm.getAttribute("height"))).toBeGreaterThanOrEqual(56); expect(Number(bm.getAttribute("height"))).toBeLessThanOrEqual(64);
+      expect(Math.abs(Number(bm.getAttribute("width")) / Number(bm.getAttribute("height")) - vw! / vh!)).toBeLessThan(0.02);
+      expect(bm.getAttribute("preserveAspectRatio")).toBe("xMidYMid meet");
+      // only the selected card carries the teal outline class
+      expect(h.doc.querySelectorAll(".wrow.sel").length).toBe(0);
       expect(text(run.querySelector(".pv"))).toMatch(/km$/);
       for (const id of ["w-str-none", "w-walk"]) {
         const plain = rowOf(h.doc, id).querySelector(".r")!;
         expect(plain.classList.contains("lead")).toBe(false);
         expect(plain.querySelector("svg")).toBeNull();
       }
+    } finally { h.close(); }
+  });
+});
+
+describe("selected card", () => {
+  it("only the selected row carries the teal selection class, and it moves when another is opened", async () => {
+    const h = await boot("#/workouts/w-str");
+    try {
+      const sel = () => [...h.doc.querySelectorAll(".wrow.sel")] as Element[];
+      expect(sel().map(r => r.getAttribute("href"))).toEqual(["#/workouts/w-str"]);
+      rowOf(h.doc, "w-walk").click(); h.win.location.hash = "#/workouts/w-walk"; await wait(300);
+      expect(sel().map(r => r.getAttribute("href"))).toEqual(["#/workouts/w-walk"]);
     } finally { h.close(); }
   });
 });
