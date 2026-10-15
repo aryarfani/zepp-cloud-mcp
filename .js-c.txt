@@ -1,0 +1,13 @@
+  var LABEL_ICONS = [[/step/i, "steps"], [/sleep|night/i, "moon"], [/resting|heart|^avg hr/i, "heart"], [/charge|power|end of day/i, "bolt"], [/weigh|bmi|^change$|^latest$/i, "scale"], [/calor|energy/i, "flame"], [/distance/i, "route"], [/duration/i, "clock"], [/pace|speed/i, "gauge"], [/cadence/i, "steps"], [/elevation/i, "mountain"], [/training|load|workout|score|best|lowest|highest|longest|shortest|average/i, "pulse"]];
+  function labelIcon(label) {
+    for (var i = 0; i < LABEL_ICONS.length; i++) if (LABEL_ICONS[i][0].test(label)) return ico(LABEL_ICONS[i][1]);
+    return null;
+  }
+  function card(label, big, unit, sub, extra, onclick, iconEl) {
+    var ic = iconEl === undefined ? labelIcon(label) : iconEl;
+    return h("div", { class: "card" + (onclick ? " click" : ""), onclick: onclick || null, tabindex: onclick ? "0" : null }, [
+      h("div", { class: "label" }, [ic, h("span", { text: label })]),
+      h("div", { class: "big" }, [big, unit ? h("span", { class: "unit", text: " " + unit }) : null]),
+      h("div", { class: "sub" }, sub), extra || null
+    ]);
+  }

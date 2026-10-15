@@ -8,6 +8,7 @@ import { strengthExerciseName, strengthExerciseSource } from "../zepp/strength-e
 type Row = Record<string, unknown>;
 
 export const DASHBOARD_MAX_DAYS = 366;
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 export const WORKOUT_PAGE_MAX = 100;
 const STAGES = ["deep", "light", "rem", "awake"] as const;
 
@@ -154,11 +155,18 @@ export class DashboardData {
   }
 
   // ---- workouts -----------------------------------------------------------------------------------------------------
-  workouts(opts: { days?: number; type?: string; limit: number; offset: number }) {
+  workouts(opts: { days?: number; type?: string; q?: string; limit: number; offset: number }) {
     if (!this.available()) return { available: false, workouts: [], total: 0, types: [] };
     const where: string[] = []; const params: SQLInputValue[] = [];
     if (opts.days !== undefined) { where.push("started_date >= ?"); params.push(this.since(opts.days)); }
     if (opts.type) { where.push("activity_type = ?"); params.push(opts.type); }
+    // Free-text search: every word must match the sport name, the ISO date or a month name.
+    for (const word of (opts.q ?? "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6)) {
+      const month = MONTHS.findIndex(m => word.length >= 3 && m.startsWith(word));
+      const like = `%${word.replace(/[\\%_]/g, "")}%`;
+      if (month >= 0) { where.push("(replace(activity_type, '_', ' ') LIKE ? OR started_date LIKE ? OR substr(started_date, 6, 2) = ?)"); params.push(like, like, String(month + 1).padStart(2, "0")); }
+      else { where.push("(replace(activity_type, '_', ' ') LIKE ? OR started_date LIKE ?)"); params.push(like, like); }
+    }
     const clause = where.length ? ` WHERE ${where.join(" AND ")}` : "";
     const limit = Math.max(1, Math.min(WORKOUT_PAGE_MAX, opts.limit));
     const rows = this.all(

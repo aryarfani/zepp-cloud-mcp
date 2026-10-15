@@ -6,6 +6,8 @@ import { SESSION_COOKIE, SESSION_TTL_S, createSessionManager, deriveSessionKeyMa
 import { renderDashboardHtml, renderLoginHtml } from "./ui";
 
 const CSRF_COOKIE = "zepp_dash_csrf";
+/** The only external host the dashboard may load images from: OpenStreetMap raster tiles for the workout route map. */
+export const TILE_HOST = "https://tile.openstreetmap.org";
 const DASHBOARD_MAX_DAYS = 366;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_PER_IP = 5;
@@ -50,7 +52,7 @@ function securityHeaders(contentType: string, nonce?: string): Headers {
   h.set("x-robots-tag", "noindex, nofollow");
   if (nonce) {
     h.set("content-security-policy",
-      `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data:; ` +
+      `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data: ${TILE_HOST}; ` +
       `form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
   }
   return h;
@@ -154,8 +156,9 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
           const dayParam = q.get("days");
           const days = dayParam === null || dayParam === "" ? undefined : intParam(dayParam, 0, 1, DASHBOARD_MAX_DAYS);
           const type = q.get("type") ?? undefined;
-          if (limit === null || offset === null || days === null || (type !== undefined && type.length > 60)) return json({ error: "Invalid query parameters" }, 400);
-          return json(data.workouts({ limit, offset, ...(days !== undefined ? { days } : {}), ...(type ? { type } : {}) }));
+            const search = (q.get("q") ?? "").trim();
+          if (limit === null || offset === null || days === null || (type !== undefined && type.length > 60) || search.length > 60) return json({ error: "Invalid query parameters" }, 400);
+          return json(data.workouts({ limit, offset, ...(days !== undefined ? { days } : {}), ...(type ? { type } : {}), ...(search ? { q: search } : {}) }));
         }
         default: {
           if (path.startsWith("workouts/") && path.endsWith("/analysis")) {
