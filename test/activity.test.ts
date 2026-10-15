@@ -5,7 +5,9 @@ import { normalizeBandData } from "../src/zepp/activity";
 describe("band activity normalization", () => {
   it("uses only verified daily fields", () => {
     const days = normalizeBandData(fixture).daily;
-    expect(days[0]).toMatchObject({ date: "2026-08-31", steps: 7890, distance_m: 6230, active_calories_kcal: 456, resting_hr_bpm: 58 });
+    // normalizeBandData sorts days ascending by date, so look the day up instead of assuming its index.
+    expect(days.map(d => d.date)).toEqual([...days.map(d => d.date)].sort());
+    expect(days.find(d => d.date === "2026-08-31")).toMatchObject({ date: "2026-08-31", steps: 7890, distance_m: 6230, active_calories_kcal: 456, resting_hr_bpm: 58 });
   });
 
   it("keeps missing distance and calories absent", () => {
