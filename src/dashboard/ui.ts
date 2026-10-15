@@ -64,8 +64,14 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .tabs a{padding:7px 14px;border-radius:10px;background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
 .tabs a.active{background:var(--teal);border-color:var(--teal);color:#0d1514;font-weight:600}
 .split{display:grid;grid-template-columns:minmax(300px,clamp(300px,26vw,460px)) minmax(0,1fr);gap:16px;align-items:start}
-.wlist{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 240px);overflow-y:auto;padding:10px 2px 10px 0}
-.wrow{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
+.wlist-pane{display:flex;flex-direction:column;min-height:0;min-width:0}
+.wlist{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;overflow-y:auto;position:relative;padding:10px 2px 10px 0;overscroll-behavior:contain}
+.wdetail{min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:4px}
+.wend{flex:none;text-align:center;padding:10px 0;min-height:38px}
+.content.fit{height:100vh;height:100dvh;overflow:hidden}
+.content.fit #view{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:16px}
+.content.fit .split{flex:1;min-height:0;grid-template-rows:minmax(0,1fr);align-items:stretch}
+.wrow{flex:none;display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
 .wrow:hover{border-color:var(--teal)}
 .wrow.sel{border-color:var(--teal);background:linear-gradient(90deg,rgba(45,212,191,.14),rgba(167,139,250,.08))}
 .wrow .t{font-weight:600}.wrow .r{text-align:right;color:var(--muted);font-size:.85rem;white-space:nowrap}
@@ -83,7 +89,6 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .split.has-detail .wlist-pane{display:none}
 .split:not(.has-detail) .wdetail{display:none}
 .back{display:inline-block}
-.wlist{max-height:none}
 .grid2{grid-template-columns:1fr}
 }`;
 
@@ -92,7 +97,7 @@ export const DASHBOARD_JS = String.raw`(function () {
   "use strict";
   var TZ = "UTC";
   var SVGNS = "http://www.w3.org/2000/svg";
-  var state = { days: 30, wk: { type: "", items: [], total: 0, types: [], loaded: false }, chargeDate: "" };
+  var state = { days: 30, wk: { type: "", items: [], total: 0, types: [], loaded: false, scrollTop: 0 }, chargeDate: "", wkUi: null };
   var navToken = 0;
   var RANGE_VIEWS = { sleep: 1, activity: 1, charge: 1, weight: 1 };
   var TITLES = { overview: "Overview", sleep: "Sleep", activity: "Activity", charge: "Hybrid Charge", workouts: "Workouts", weight: "Weight", sync: "Sync" };
@@ -489,15 +494,8 @@ export const DASHBOARD_JS = String.raw`(function () {
   function exerciseCell(name, known, id) {
     return known ? name : h("span", { class: "unknown mono", title: "Unmapped exercise id " + id }, name);
   }
-  function loadWorkoutPage() {
-    var wk = state.wk;
-    var q = "workouts?limit=25&offset=" + wk.items.length + (wk.type ? "&type=" + encodeURIComponent(wk.type) : "");
-    return api(q).then(function (r) {
-      wk.items = wk.items.concat(r.workouts || []); wk.total = r.total; wk.types = r.types || wk.types || []; wk.loaded = true;
-    });
-  }
   function workoutRow(w, selId) {
-    return h("a", { class: "wrow" + (w.workout_id === selId ? " sel" : ""), href: "#/workouts/" + encodeURIComponent(w.workout_id) }, [
+    return h("a", { class: "wrow" + (w.workout_id === selId ? " sel" : ""), href: "#/workouts/" + encodeURIComponent(w.workout_id), onclick: function () { if (state.wkUi) state.wkUi.skipScroll = true; } }, [
       h("div", null, [h("div", { class: "t" }, [typeName(w.activity_type), " ", typeBadge(w)]), h("div", { class: "sub", text: shortDate(w.started_date) + " " + localTime(w.started_at) + (w.strength_sets > 0 ? " | " + w.strength_sets + " sets" : "") })]),
       h("div", { class: "r" }, [h("div", { text: fmtDur(w.duration_s) }), h("div", { text: fmtKm(w.distance_m) })])
     ]);
@@ -539,31 +537,124 @@ export const DASHBOARD_JS = String.raw`(function () {
       }), [0, 3, 4, 6, 7])]));
     });
   }
+  // The list is built once per visit. Opening a workout (hash change inside #/workouts) only updates the highlight and the
+  // detail pane (ui.select); the list keeps its loaded pages and scroll position. Pages load through an IntersectionObserver
+  // on a sentinel at the end of the list's own scroll container, with a Load more button only when the API is missing.
   function viewWorkouts(box, token, rest) {
     var tabs = h("div", { class: "tabs" }, [
       h("a", { href: "#/workouts", class: rest !== "exercises" ? "active" : "", text: "Workouts" }),
       h("a", { href: "#/workouts/exercises", class: rest === "exercises" ? "active" : "", text: "Exercises" })
     ]);
     clear(box); box.appendChild(tabs);
+    state.wkUi = null;
     if (rest === "exercises") return exercisesTab(box, token);
-    var wk = state.wk, split = h("div", { class: "split" + (rest ? " has-detail" : "") });
-    var listPane = h("div", { class: "wlist-pane" }), detailPane = h("div", { class: "wdetail" });
-    split.appendChild(listPane); split.appendChild(detailPane); box.appendChild(split);
+    var wk = state.wk, hasIO = typeof IntersectionObserver === "function";
+    var ui = { box: box, gen: 0, loading: false, done: false, failed: false, rows: {}, selId: "", skipScroll: false, observer: null };
+    ui.split = h("div", { class: "split" });
+    ui.listPane = h("div", { class: "wlist-pane" });
+    ui.detailPane = h("div", { class: "wdetail" });
+    ui.list = h("div", { class: "wlist" });
+    ui.end = h("div", { class: "wend sub" });
+    ui.count = h("span", { class: "sub" });
+    ui.split.appendChild(ui.listPane); ui.split.appendChild(ui.detailPane); box.appendChild(ui.split);
+    state.wkUi = ui;
+
+    function fetchPage(offset, type) {
+      return api("workouts?limit=25&offset=" + offset + (type ? "&type=" + encodeURIComponent(type) : ""));
+    }
+    function setCount() { ui.count.textContent = wk.items.length + " of " + wk.total; }
+    function setEnd() {
+      clear(ui.end);
+      if (!wk.items.length) return;
+      if (ui.failed) { ui.end.appendChild(h("button", { text: "Could not load more. Retry", onclick: function () { ui.failed = false; loadMore(); } })); return; }
+      if (ui.loading) { ui.end.textContent = "Loading..."; return; }
+      if (ui.done) { ui.end.textContent = "End of list"; return; }
+      if (!hasIO) ui.end.appendChild(h("button", { text: "Load more", onclick: function () { loadMore(); } }));
+    }
+    function appendRows(items) {
+      items.forEach(function (w) {
+        var row = workoutRow(w, ui.selId);
+        ui.rows[w.workout_id] = row;
+        ui.list.insertBefore(row, ui.end);
+      });
+    }
+    function recheck() {
+      if (!ui.observer) return;
+      ui.observer.unobserve(ui.end);
+      if (!ui.done && !ui.failed) ui.observer.observe(ui.end); // re-observing reports the current state again, so a short list keeps filling
+    }
+    function loadMore() {
+      if (state.wkUi !== ui || ui.loading || ui.done) return Promise.resolve();
+      ui.loading = true; ui.failed = false; setEnd();
+      var gen = ui.gen;
+      return fetchPage(wk.items.length, wk.type).then(function (r) {
+        if (gen !== ui.gen || state.wkUi !== ui) return;
+        ui.loading = false;
+        var fresh = (r.workouts || []).filter(function (w) { return !ui.rows[w.workout_id]; });
+        wk.items = wk.items.concat(fresh); wk.total = r.total; wk.types = r.types || wk.types || []; wk.loaded = true;
+        ui.done = !fresh.length || wk.items.length >= wk.total;
+        appendRows(fresh); setCount(); setEnd(); recheck();
+      }).catch(function () {
+        if (gen !== ui.gen || state.wkUi !== ui) return;
+        ui.loading = false; ui.failed = true; setEnd();
+      });
+    }
+    function resetList(type) {
+      ui.gen++; ui.loading = false; ui.done = false; ui.failed = false;
+      wk.type = type; wk.items = []; wk.total = 0; wk.scrollTop = 0;
+      Array.prototype.slice.call(ui.list.querySelectorAll(".wrow")).forEach(function (el) { ui.list.removeChild(el); });
+      ui.rows = {}; ui.list.scrollTop = 0; setCount(); setEnd();
+      return loadMore();
+    }
+    function ensureVisible(row) {
+      var sc = ui.list, top = row.offsetTop, bottom = top + row.offsetHeight;
+      if (top < sc.scrollTop) sc.scrollTop = Math.max(0, top - 8);
+      else if (bottom > sc.scrollTop + sc.clientHeight) sc.scrollTop = bottom - sc.clientHeight + 8;
+    }
+    ui.select = function (id) {
+      var prev = ui.selId; ui.selId = id;
+      if (prev && ui.rows[prev]) ui.rows[prev].classList.remove("sel");
+      if (id && ui.rows[id]) { ui.rows[id].classList.add("sel"); if (!ui.skipScroll) ensureVisible(ui.rows[id]); }
+      ui.skipScroll = false;
+      var wasDetail = ui.split.classList.contains("has-detail");
+      ui.split.classList.toggle("has-detail", !!id);
+      // a list that was hidden (stacked mobile layout) loses its scroll offset: put it back
+      if (!id && wasDetail) ui.list.scrollTop = wk.scrollTop || 0;
+      ui.detailPane.scrollTop = 0;
+      if (!id) { clear(ui.detailPane); ui.detailPane.appendChild(empty("Select a workout to see its details")); return Promise.resolve(); }
+      return renderDetail(ui.detailPane, id, ++navToken);
+    };
+
     function paintList() {
-      clear(listPane);
+      clear(ui.listPane);
       var options = [h("option", { value: "", text: "All types" })].concat((wk.types || []).map(function (t) { return h("option", { value: t.type, text: typeName(t.type) + " (" + t.n + ")", selected: t.type === wk.type ? "selected" : null }); }));
       var sel = h("select", { "aria-label": "Workout type" }, options);
-      sel.addEventListener("change", function () { wk.type = sel.value; wk.items = []; wk.loaded = false; viewWorkouts(box, token, rest); });
-      listPane.appendChild(h("div", { class: "seg" }, [sel, h("span", { class: "sub", text: wk.items.length + " of " + wk.total })]));
-      if (!wk.items.length) { listPane.appendChild(empty("No workouts yet")); return; }
-      listPane.appendChild(h("div", { class: "wlist" }, wk.items.map(function (w) { return workoutRow(w, rest); })));
-      if (wk.items.length < wk.total) listPane.appendChild(h("button", { text: "Load more", onclick: function () { loadWorkoutPage().then(paintList); } }));
+      sel.addEventListener("change", function () { resetList(sel.value); });
+      ui.listPane.appendChild(h("div", { class: "seg" }, [sel, ui.count]));
+      if (!wk.items.length) { ui.listPane.appendChild(empty("No workouts yet")); return; }
+      ui.listPane.appendChild(ui.list);
+      ui.list.appendChild(ui.end);
+      appendRows(wk.items);
+      ui.done = wk.items.length >= wk.total;
+      setCount(); setEnd();
+      ui.list.addEventListener("scroll", function () { wk.scrollTop = ui.list.scrollTop; });
+      if (wk.scrollTop) ui.list.scrollTop = wk.scrollTop;
+      if (ui.selId && ui.rows[ui.selId]) ensureVisible(ui.rows[ui.selId]);
+      if (hasIO) {
+        ui.observer = new IntersectionObserver(function (entries) {
+          for (var i = 0; i < entries.length; i++) if (entries[i].isIntersecting) { loadMore(); break; }
+        }, { root: ui.list, rootMargin: "0px 0px 240px 0px" });
+        if (!ui.done) ui.observer.observe(ui.end);
+      }
     }
-    var listReady = wk.loaded ? Promise.resolve() : loadWorkoutPage();
+    ui.selId = rest;
+    var listReady = wk.loaded ? Promise.resolve() : fetchPage(0, wk.type).then(function (r) {
+      wk.items = r.workouts || []; wk.total = r.total; wk.types = r.types || []; wk.loaded = true;
+    });
     var detail;
-    if (rest) detail = renderDetail(detailPane, rest, token);
-    else { detailPane.appendChild(empty("Select a workout to see its details")); detail = Promise.resolve(); }
-    return Promise.all([listReady.then(function () { if (token === navToken) paintList(); }), detail]);
+    if (rest) { ui.split.classList.add("has-detail"); detail = renderDetail(ui.detailPane, rest, token); }
+    else { ui.detailPane.appendChild(empty("Select a workout to see its details")); detail = Promise.resolve(); }
+    return Promise.all([listReady.then(function () { if (token === navToken && state.wkUi === ui) paintList(); }), detail]);
   }
 
   // ---- router -------------------------------------------------------------------------------------------------------
@@ -584,12 +675,21 @@ export const DASHBOARD_JS = String.raw`(function () {
   }
   function closeMenu() { $("sidebar").classList.remove("open"); $("scrim").classList.remove("open"); }
   function route() {
-    var r = parseRoute(), token = ++navToken, box = $("view");
+    var r = parseRoute(), box = $("view");
     document.title = TITLES[r.view] + " | Zepp";
     $("title").textContent = TITLES[r.view];
     Array.prototype.forEach.call(document.querySelectorAll("nav.menu a"), function (a) { a.classList.toggle("active", a.getAttribute("data-route") === r.view); });
     closeMenu();
     renderRange(r.view);
+    // Opening another workout must not rebuild the list: only the highlight and the detail pane change.
+    var live = state.wkUi;
+    if (r.view === "workouts" && r.rest !== "exercises" && live && live.box === box && box.contains(live.split)) {
+      return Promise.resolve(live.select(r.rest)).catch(function () {});
+    }
+    var token = ++navToken;
+    if (live && live.observer) live.observer.disconnect();
+    state.wkUi = null;
+    $("content").classList.toggle("fit", r.view === "workouts" && r.rest !== "exercises");
     clear(box); box.appendChild(empty("Loading..."));
     var views = { overview: viewOverview, sleep: viewSleep, activity: viewActivity, charge: viewCharge, workouts: viewWorkouts, weight: viewWeight, sync: viewSync };
     var p;
@@ -659,7 +759,7 @@ export function renderDashboardHtml(nonce: string): string {
     `<nav class="menu" aria-label="Sections">${nav}</nav>` +
     `<form method="post" action="/dashboard/logout"><button type="submit" class="logout">${icon("logout")}<span>Log out</span></button></form></aside>` +
     `<div id="scrim" class="scrim"></div>` +
-    `<div class="content"><header class="topbar"><button id="menu" type="button" class="hamb" aria-label="Open menu">${icon("menu")}</button>` +
+    `<div id="content" class="content"><header class="topbar"><button id="menu" type="button" class="hamb" aria-label="Open menu">${icon("menu")}</button>` +
     `<h1 id="title">Overview</h1><div id="rangebar" class="seg"></div></header>` +
     `<main id="view"><div class="empty">Loading...</div></main></div></div>` +
     `<script nonce="${n}">${DASHBOARD_JS}</script></body></html>`;

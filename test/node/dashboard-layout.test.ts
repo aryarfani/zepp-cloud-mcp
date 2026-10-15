@@ -27,4 +27,15 @@ describe("dashboard layout is full width", () => {
     expect(DASHBOARD_JS).toContain('viewBox: "0 0 " + W + " " + H');
     expect(css).toMatch(/svg\.chart\{width:100%;height:auto/);
   });
-});
+
+  it("workouts view is a fixed-height split whose list and detail scroll on their own", () => {
+    expect(css).toMatch(/\.content\.fit\{[^}]*height:100vh[^}]*overflow:hidden/);
+    expect(css).toMatch(/\.content\.fit #view\{[^}]*min-height:0[^}]*overflow:hidden/);
+    expect(css).toMatch(/\.content\.fit \.split\{[^}]*min-height:0/);
+    expect(css).toMatch(/\.wlist\{[^}]*min-height:0[^}]*overflow-y:auto/);
+    expect(css).toMatch(/\.wdetail\{[^}]*min-height:0[^}]*overflow-y:auto/);
+    expect(css).not.toMatch(/\.wlist\{[^}]*max-height/);
+    expect(html).toContain('id="content"');
+    expect(DASHBOARD_JS).toContain("new IntersectionObserver");
+    expect(DASHBOARD_JS).toContain("live.select(r.rest)");
+  });});
