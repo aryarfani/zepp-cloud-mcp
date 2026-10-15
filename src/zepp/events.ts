@@ -8,6 +8,9 @@ import { buildZeppRequest, type ZeppRequest } from "./endpoints";
 import { firstValue, localDateFromMs, numericValue, objectValue, parseTimestampMs, sourceScope, topLevelKeys } from "./normalize";
 import type { MetricPoint, SourceScope } from "./types";
 
+/** Largest limit accepted by get_metric_series (matches the upstream per-request page size of 2000). */
+export const MAX_SERIES_LIMIT = 2000;
+
 export const REVIEWED_METRIC_IDS = [
   "hrv", "hrv_rmssd", "readiness", "respiratory_rate", "skin_temperature",
   "lactate_threshold", "daily_health", "blood_oxygen", "all_day_stress", "pai",
@@ -331,13 +334,13 @@ export async function getMetricSeries(
   range: DateRange,
   limit?: number
 ): Promise<Envelope<MetricPoint[]>> {
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > MAX_SERIES_LIMIT)) {
+    throw new ZeppError("unsupported", `Metric series limit must be an integer from 1 to ${MAX_SERIES_LIMIT}`);
+  }
   const mapping = SERIES_METRICS[metric];
   const result = await fetchReviewedMetric(ctx, mapping.source, range);
   let points = result.points.filter(item => item.metric === mapping.outputMetric).map(({ metric: _metric, ...item }) => item);
-  if (limit !== undefined) {
-    if (!Number.isInteger(limit) || limit < 1 || limit > 2000) throw new ZeppError("unsupported", "Metric series limit must be an integer from 1 to 2000");
-    points = points.slice(-limit);
-  }
+  if (limit !== undefined) points = points.slice(-limit);
   return points.length ? ok(points, range.timezone) : noData(range.timezone);
 }
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { fromError } from "../response";
 import type { Services } from "../services";
 import { parseDateRange } from "../time";
-import { REVIEWED_METRIC_IDS, SERIES_METRIC_IDS } from "../zepp/events";
+import { MAX_SERIES_LIMIT, REVIEWED_METRIC_IDS, SERIES_METRIC_IDS } from "../zepp/events";
 import { WORKOUT_SAMPLE_FIELDS } from "../zepp/workout-detail";
 import { buildZeppRequest } from "../zepp/endpoints";
 
@@ -75,7 +75,7 @@ export function createZeppMcpServer(services: Services): McpServer {
 
   server.registerTool("get_metric_series", {
     description: "Get a normalized scalar time series for a reviewed metric.",
-    inputSchema: z.object({ metric: z.enum(SERIES_METRIC_IDS), ...rangeShape, limit: z.number().int().min(1).max(5000).default(1000) }), annotations
+    inputSchema: z.object({ metric: z.enum(SERIES_METRIC_IDS), ...rangeShape, limit: z.number().int().min(1).max(MAX_SERIES_LIMIT).default(1000) }), annotations
   }, async ({ metric, start_date, end_date, limit }) => safe(services, () => services.getMetricSeries(metric, range(services, start_date, end_date), limit)));
 
   server.registerTool("get_raw_metric", {
