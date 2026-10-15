@@ -15,8 +15,8 @@ describe("get_metric_series limit", () => {
 
   it.each([0, -1, 1.5, MAX_SERIES_LIMIT + 1, 5000, Number.NaN])("rejects limit %s before fetching", async limit => {
     await expect(getMetricSeries(ctx, metric, range, limit)).rejects.toMatchObject({
-      kind: "unsupported",
-      message: "Metric series limit must be an integer from 1 to 2000"
+      name: "InputError",
+      message: "limit must be an integer from 1 to 2000"
     });
   });
 });

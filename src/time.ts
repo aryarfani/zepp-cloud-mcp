@@ -1,4 +1,9 @@
+import { InputError } from "./errors";
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Largest date range (inclusive days) one tool call may cover. Longer ranges are split into upstream windows. */
+export const MAX_RANGE_DAYS = 366;
 
 export interface DateRange {
   startDate: string;
@@ -16,14 +21,14 @@ export interface DateRange {
 interface DateParts { year: number; month: number; day: number }
 
 function parseDate(date: string): DateParts {
-  if (!ISO_DATE.test(date)) throw new Error("Date must use YYYY-MM-DD");
+  if (!ISO_DATE.test(date)) throw new InputError(`Date must use YYYY-MM-DD (got "${String(date).slice(0, 24)}")`);
   const [year, month, day] = date.split("-").map(Number) as [number, number, number];
   const check = new Date(Date.UTC(year, month - 1, day));
   if (
     check.getUTCFullYear() !== year ||
     check.getUTCMonth() !== month - 1 ||
     check.getUTCDate() !== day
-  ) throw new Error(`Invalid ISO date: ${date}`);
+  ) throw new InputError(`Invalid calendar date: ${date}`);
   return { year, month, day };
 }
 
@@ -31,7 +36,7 @@ function assertTimeZone(timezone: string): void {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date(0));
   } catch {
-    throw new Error(`Invalid timezone: ${timezone}`);
+    throw new InputError(`Invalid timezone: ${String(timezone).slice(0, 40)}`);
   }
 }
 
@@ -80,16 +85,16 @@ function localBoundary(date: string, timezone: string, end: boolean): { ms: numb
   return { ms: epoch, iso: `${local}${offsetText(offset)}` };
 }
 
-/** `maxDays` is the inclusive-day cap (31 for tools; the sync passes a larger one for single-request, sparse data such as weigh-ins). */
-export function parseDateRange(startDate: string, endDate: string, timezone: string, maxDays = 31): DateRange {
+/** `maxDays` is the inclusive-day cap per call (default MAX_RANGE_DAYS = 366). Upstream window sizes are handled by splitDateRange. */
+export function parseDateRange(startDate: string, endDate: string, timezone: string, maxDays = MAX_RANGE_DAYS): DateRange {
   assertTimeZone(timezone);
   const start = parseDate(startDate);
   const end = parseDate(endDate);
   const startDay = Date.UTC(start.year, start.month - 1, start.day);
   const endDay = Date.UTC(end.year, end.month - 1, end.day);
-  if (startDay > endDay) throw new Error("start date must be on or before end date");
+  if (startDay > endDay) throw new InputError(`start_date (${startDate}) must be on or before end_date (${endDate})`);
   const days = Math.floor((endDay - startDay) / 86_400_000) + 1;
-  if (days > maxDays) throw new Error(`Date range cannot exceed ${maxDays} inclusive days`);
+  if (days > maxDays) throw new InputError(`Date range is ${days} days (${startDate} to ${endDate}); the maximum is ${maxDays} days per call. Use a shorter range or split the request.`);
   const from = localBoundary(startDate, timezone, false);
   const to = localBoundary(endDate, timezone, true);
   return {
@@ -116,4 +121,23 @@ export function addIsoDays(date: string, days: number): string {
   const { year, month, day } = parseDate(date);
   const shifted = new Date(Date.UTC(year, month - 1, day + days));
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+}
+
+export interface DateWindow { startDate: string; endDate: string }
+
+/**
+ * Split an inclusive local-date range into consecutive windows of at most `windowDays` days. Windows are aligned to the
+ * END of the range (so a repeated "last N days" query produces the same windows), and returned oldest-first unless
+ * `newestFirst` is set (the sync fetches the newest window first).
+ */
+export function splitDateRange(startDate: string, endDate: string, windowDays: number, newestFirst = false): DateWindow[] {
+  const size = Math.max(1, Math.floor(windowDays));
+  parseDate(startDate); parseDate(endDate);
+  if (startDate > endDate) throw new InputError(`start_date (${startDate}) must be on or before end_date (${endDate})`);
+  const windows: DateWindow[] = [];
+  for (let windowEnd = endDate; windowEnd >= startDate; windowEnd = addIsoDays(windowEnd, -size)) {
+    const first = addIsoDays(windowEnd, -(size - 1));
+    windows.push({ startDate: first < startDate ? startDate : first, endDate: windowEnd });
+  }
+  return newestFirst ? windows : windows.reverse();
 }

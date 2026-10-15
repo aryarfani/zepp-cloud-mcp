@@ -7,8 +7,9 @@ describe("parseDateRange", () => {
     expect(range.days).toBe(31);
   });
 
-  it("rejects 32 inclusive days", () => {
-    expect(() => parseDateRange("2026-07-31", "2026-08-31", "Asia/Jakarta")).toThrow(/31/);
+  it("rejects more than 366 inclusive days with a clear message", () => {
+    expect(() => parseDateRange("2025-10-14", "2026-10-15", "Asia/Jakarta")).toThrow(/367 days.*maximum is 366/);
+    expect(() => parseDateRange("2025-10-15", "2026-10-15", "Asia/Jakarta")).not.toThrow();
   });
 
   it("uses the configured timezone rather than UTC day boundaries", () => {

@@ -1,5 +1,5 @@
 import type { PublicStatus } from "./errors";
-import { ZeppError } from "./errors";
+import { InputError, ZeppError } from "./errors";
 
 export interface EnvelopeMeta {
   source: "zepp_cloud";
@@ -20,6 +20,10 @@ export function ok<T>(data: T, timezone: string, extra: Partial<EnvelopeMeta> = 
   return { status: "ok", data, meta: { ...baseMeta(timezone), ...extra } };
 }
 
+export function partialResult<T>(data: T, timezone: string, warnings: string[]): Envelope<T> {
+  return { status: "partial", data, meta: { ...baseMeta(timezone), partial: true, warnings } };
+}
+
 export function noData(timezone: string, warnings: string[] = []): Envelope<never> {
   return { status: "no_data", data: null, meta: { ...baseMeta(timezone), warnings } };
 }
@@ -36,8 +40,13 @@ export function fromError(error: unknown, timezone: string): Envelope<never> {
     const warnings: string[] = [];
     if (error.kind === "auth_expired") warnings.push("Zepp rejected the stored ZEPP_APP_TOKEN (expired or invalid); replace it in the server configuration.");
     else if (error.kind === "upstream_rate_limited") warnings.push(error.retryAfter ? `Zepp requested retry after ${error.retryAfter}.` : "Zepp rate limited the request.");
+    // "unsupported" errors are raised locally with fixed, caller-facing text (bad ids, limits), so the message is safe to return.
+    else if (error.kind === "unsupported" && error.message) warnings.push(error.message);
     else warnings.push(SAFE_WARNING[error.kind] ?? "Zepp request could not be completed safely.");
     return { status: error.kind, data: null, meta: { ...baseMeta(timezone), warnings } };
+  }
+  if (error instanceof InputError) {
+    return { status: "invalid_request", data: null, meta: { ...baseMeta(timezone), warnings: [error.message] } };
   }
   return { status: "upstream_error", data: null, meta: { ...baseMeta(timezone), warnings: ["Unexpected internal error while querying Zepp."] } };
 }
