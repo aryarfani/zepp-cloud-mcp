@@ -19,16 +19,27 @@ export async function withZeppCache<T>(
   loader: () => Promise<T>
 ): Promise<T> {
   const cachesAny = (globalThis as any).caches as (CacheStorage & { default: Cache }) | undefined;
-  if (!cachesAny?.default) return loader();
+  if (!cachesAny?.default || !Number.isFinite(ttlSeconds) || ttlSeconds <= 0) return loader();
+  const cache = cachesAny.default;
+
+  // Cache problems must never fail a request, and the loader must run at most once:
+  // errors thrown by the loader itself are deliberately not caught here.
+  let key: Request | undefined;
   try {
-    const cache = cachesAny.default;
-    const key = new Request(await makeCacheKey(namespace, params), { method: 'GET' });
+    key = new Request(await makeCacheKey(namespace, params), { method: 'GET' });
     const hit = await cache.match(key);
     if (hit) return (await hit.json()) as T;
-    const value = await loader();
-    await cache.put(key, Response.json(value, { headers: { 'cache-control': 'max-age=' + ttlSeconds } }));
-    return value;
   } catch {
-    return loader();
+    key = undefined;
   }
+
+  const value = await loader();
+  if (key) {
+    try {
+      await cache.put(key, Response.json(value, { headers: { 'cache-control': 'max-age=' + Math.floor(ttlSeconds) } }));
+    } catch {
+      // Best effort: a failed cache write still returns the fresh value.
+    }
+  }
+  return value;
 }

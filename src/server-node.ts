@@ -4,15 +4,10 @@ import path from 'node:path';
 import { createApp } from './app';
 import { createOAuth } from './oauth';
 import { FileOAuthStore } from './oauth-file-store';
+import { createMemoryCache, DEFAULT_MAX_CACHE_ENTRIES } from './memory-cache';
 if (typeof (globalThis as any).caches === 'undefined') {
-  const mem = new Map<string, Response>();
-  (globalThis as any).caches = {
-    default: {
-      async match(req: Request) { const hit = mem.get(req.url); return hit ? hit.clone() : undefined; },
-      async put(req: Request, res: Response) { mem.set(req.url, res.clone()); }
-    }
-  } as any;
-  console.log('[zepp] caches shim enabled');
+  (globalThis as any).caches = { default: createMemoryCache() } as any;
+  console.log('[zepp] in-memory cache enabled (TTL honored, max ' + DEFAULT_MAX_CACHE_ENTRIES + ' entries)');
 }
 function loadEnv(): Env {
   return {
