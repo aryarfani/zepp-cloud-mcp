@@ -12,6 +12,8 @@ export interface AppDeps {
   port?: number;
   /** Node server only: returns the local store/sync status for the `sync_status` tool. Omit to leave that tool out. */
   syncStatus?: () => unknown;
+  /** Node server only: handles /dashboard and /dashboard/* (the read-only web dashboard). Without it those paths are 404. */
+  dashboard?: (request: Request) => Promise<Response>;
 }
 
 export function createApp(deps: AppDeps): (request: Request) => Promise<Response> {
@@ -23,6 +25,9 @@ export function createApp(deps: AppDeps): (request: Request) => Promise<Response
     }
     if (url.pathname === "/health" && request.method === "GET") {
       return Response.json({ status: "ok", runtime: "node", port: deps.port ?? 8788 });
+    }
+    if (url.pathname === "/dashboard" || url.pathname.startsWith("/dashboard/")) {
+      return deps.dashboard ? deps.dashboard(request) : new Response("Not Found", { status: 404, headers: { "content-type": "text/plain" } });
     }
     if (oauth) {
       const res = await oauth.handle(request);

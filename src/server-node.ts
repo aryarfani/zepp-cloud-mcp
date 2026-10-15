@@ -11,6 +11,8 @@ import { parseSyncConfig } from './sync/config';
 import { createSyncService, type SyncService } from './sync/service';
 import { startSyncScheduler } from './sync/scheduler';
 import { createMemoryCache, DEFAULT_MAX_CACHE_ENTRIES } from './memory-cache';
+import { createDashboard } from './dashboard/handler';
+import { DashboardData } from './dashboard/data';
 if (typeof (globalThis as any).caches === 'undefined') {
   (globalThis as any).caches = { default: createMemoryCache() } as any;
   console.log('[zepp] in-memory cache enabled (TTL honored, max ' + DEFAULT_MAX_CACHE_ENTRIES + ' entries)');
@@ -79,7 +81,19 @@ try {
 } catch (e: any) {
   console.error('[zepp] local store unavailable, sync_status disabled: ' + (e?.message ?? 'error'));
 }
-const app = createApp({ env, oauth, port: PORT, ...(syncService ? { syncStatus: () => syncService!.status() } : {}) });
+// Read-only web dashboard at /dashboard. Needs the owner password (same one as OAuth); without it the routes answer 404.
+let dashboard: ((request: Request) => Promise<Response>) | undefined;
+if (ownerPassword.length >= 16) {
+  const sessionSecret = process.env.DASHBOARD_SESSION_SECRET || undefined;
+  dashboard = createDashboard({
+    ownerPassword,
+    ...(sessionSecret ? { sessionSecret } : {}),
+    data: new DashboardData(path.resolve(syncConfig.dbPath), { timezone: env.USER_TIMEZONE }),
+    ...(syncService ? { syncStatus: () => syncService!.status() } : {})
+  });
+  console.log('[zepp] dashboard enabled at /dashboard');
+}
+const app = createApp({ env, oauth, port: PORT, ...(syncService ? { syncStatus: () => syncService!.status() } : {}), ...(dashboard ? { dashboard } : {}) });
 async function handleNodeRequest(nodeReq: http.IncomingMessage, nodeRes: http.ServerResponse) {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -93,7 +107,12 @@ async function handleNodeRequest(nodeReq: http.IncomingMessage, nodeRes: http.Se
     chunks.push(chunk as Buffer);
   }
   const response = await app(toFetchRequest(nodeReq, Buffer.concat(chunks)));
-  nodeRes.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+  // Set-Cookie must stay a list: several cookies (e.g. login sets one and clears one) cannot be folded into one header.
+  const outHeaders: Record<string, string | string[]> = {};
+  response.headers.forEach((value, key) => { if (key !== 'set-cookie') outHeaders[key] = value; });
+  const cookies = response.headers.getSetCookie();
+  if (cookies.length) outHeaders['set-cookie'] = cookies;
+  nodeRes.writeHead(response.status, outHeaders);
   if (response.body) {
     const ab = await response.arrayBuffer();
     nodeRes.end(Buffer.from(ab));

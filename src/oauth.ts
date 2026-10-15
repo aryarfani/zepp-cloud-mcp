@@ -78,12 +78,12 @@ export interface OAuthProvider {
 // ---------- helpers ----------
 const enc = new TextEncoder();
 
-function b64url(bytes: Uint8Array): string {
+export function b64url(bytes: Uint8Array): string {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function randomToken(prefix: string, bytes = 32): string {
+export function randomToken(prefix: string, bytes = 32): string {
   const a = new Uint8Array(bytes);
   crypto.getRandomValues(a);
   return prefix + b64url(a);
@@ -94,7 +94,7 @@ async function sha256(input: string): Promise<Uint8Array> {
 async function sha256Hex(input: string): Promise<string> {
   return [...(await sha256(input))].map(v => v.toString(16).padStart(2, "0")).join("");
 }
-async function safeEqual(a: string, b: string): Promise<boolean> {
+export async function safeEqual(a: string, b: string): Promise<boolean> {
   const [x, y] = await Promise.all([sha256(a), sha256(b)]);
   let diff = 0;
   for (let i = 0; i < x.length; i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
@@ -127,7 +127,7 @@ export function isAllowedRedirectUri(raw: string): boolean {
   return false;
 }
 
-class RateLimiter {
+export class RateLimiter {
   private hits = new Map<string, number[]>();
   constructor(private now: () => number) {}
   count(key: string, windowMs: number): number {
@@ -194,7 +194,7 @@ export function isSameOriginPost(request: Request, expectedOrigin: string): bool
   }
   return false;
 }
-function parseCookies(header: string | null): Record<string, string> {
+export function parseCookies(header: string | null): Record<string, string> {
   const out: Record<string, string> = {};
   if (!header) return out;
   for (const part of header.split(";")) {
@@ -203,7 +203,7 @@ function parseCookies(header: string | null): Record<string, string> {
   }
   return out;
 }
-function clientIp(request: Request): string {
+export function clientIp(request: Request): string {
   return request.headers.get("x-real-ip") || "unknown";
 }
 async function readBody(request: Request): Promise<string | null> {
