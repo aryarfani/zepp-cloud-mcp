@@ -78,6 +78,14 @@ describe("analyzeWorkout", () => {
   });
 });
 
+describe("pace sanity", () => {
+  it("drops paces slower than an hour per km (pool swims)", () => {
+    const n = analyzeWorkout({}, { run_time: "4988", dis: "125", avg_pace: "39.9", max_pace: "1.546" });
+    expect(n.summary.avg_pace_s_km).toBeNull();
+    expect(n.summary.best_pace_s_km).toBe(1546);
+  });
+});
+
 describe("decodeHeartRateTimeline", () => {
   it("reads the first value as absolute and the rest as deltas", () => {
     const m = decodeHeartRateTimeline("0,100;1,2;1,-1;2,5", 1000);

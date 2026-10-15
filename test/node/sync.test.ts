@@ -98,6 +98,7 @@ describe("runSync with a mocked Zepp client", () => {
     const bad = mockCtx({ detail: { nothing: "recognizable" } });
     const result = await runSync(bad.ctx, store, opts(), "manual", { days: 5 });
     expect(result).toMatchObject({ ok: true, status: "ok_with_warnings", counts: { warnings: 2, strength_sets: 0 } });
+    expect(store.hasWorkoutAnalysis(RUN_ID)).toBe(true); // an unreadable run detail is remembered as empty, not retried daily
     expect(store.isStrengthChecked(STRENGTH_ID)).toBe(false);
     const fixed = await runSync(mockCtx().ctx, store, opts(), "manual", { days: 5 });
     expect(fixed.counts.strength_sets).toBe(4);

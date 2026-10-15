@@ -555,7 +555,7 @@ export const DASHBOARD_JS = String.raw`(function () {
   };
   function analysisCards(w, sm) {
     var cards = [], speed = isSpeedSport(w.activity_type);
-    if (isNum(sm.avg_pace_s_km) || isNum(sm.best_pace_s_km)) {
+    if (!/swim/.test(String(w.activity_type || "")) && (isNum(sm.avg_pace_s_km) || isNum(sm.best_pace_s_km))) {
       if (speed) {
         cards.push(card("Speed", isNum(sm.avg_pace_s_km) ? fmt1(3600 / sm.avg_pace_s_km) : "-", "km/h avg", isNum(sm.best_pace_s_km) ? "best " + fmt1(3600 / sm.best_pace_s_km) + " km/h" : ""));
       } else {
@@ -643,7 +643,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     var grid1 = [], grid2 = [];
     if (se && se.t && se.t.length) {
       var hasPace = numbers(se.pace_s_km).length, hasHr = numbers(se.hr_bpm).length, hasAlt = numbers(se.alt_m).length;
-      if (hasPace) {
+      if (hasPace && !/swim/.test(String(w.activity_type || ""))) {
         var cap = isNum(sm.avg_pace_s_km) ? sm.avg_pace_s_km * 2.2 : 1200;
         if (speed) grid1.push(panel("Speed", chart({ kind: "line", points: seriesPoints(se, "pace_s_km", function (p) { return 3600 / p; }), fmt: function (v) { return fmt1(v); }, mean: isNum(sm.avg_pace_s_km) ? 3600 / sm.avg_pace_s_km : null, color: "var(--teal)", emptyText: "No speed data" })));
         else grid1.push(panel("Pace (min/km, faster is higher)", chart({ kind: "line", points: seriesPoints(se, "pace_s_km", null, cap), fmt: fmtPace, invert: true, steps: PACE_STEPS, mean: sm.avg_pace_s_km, color: "var(--teal)", emptyText: "No pace data" })));

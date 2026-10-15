@@ -158,7 +158,11 @@ export async function runSync(
           await fetchAndStoreAnalysis(ctx, store, workoutId, new Date(now()).toISOString());
           stored++;
         } catch (e) {
-          if (e instanceof ZeppError && !FATAL_KINDS.has(e.kind)) { counts.warnings++; log(`workout detail skipped (${e.kind})`); continue; }
+          if (e instanceof ZeppError && !FATAL_KINDS.has(e.kind)) {
+            // Zepp sometimes returns an unreadable detail for one workout; remember that so it is not retried (and warned about) every day.
+            if (e.kind === "unrecognized_payload") store.saveWorkoutAnalysis(workoutId, null, new Date(now()).toISOString());
+            counts.warnings++; log(`workout detail skipped (${e.kind})`); continue;
+          }
           throw e;
         }
       }

@@ -238,10 +238,12 @@ export function analyzeWorkout(detail: Raw, history: Raw = {}): WorkoutAnalysis 
   const altAll = ps ? ps.alt.filter(Number.isFinite) : [];
   const change = ps ? elevationChange(ps.alt) : null;
   const histAscent = num(history.altitude_ascend), histDescent = num(history.altitude_descend);
-  const avgPace = pos(history.avg_pace) !== null ? pos(history.avg_pace)! * 1000 : distance && duration ? (duration / distance) * 1000 : null;
+  // A pace slower than an hour per km is not a running pace (pool swims report per-100 m values); leave it out.
+  const sane = (p: number | null) => (p !== null && p <= 3600 ? p : null);
+  const avgPace = sane(pos(history.avg_pace) !== null ? pos(history.avg_pace)! * 1000 : distance && duration ? (duration / distance) * 1000 : null);
   const bestHistory = pos(history.max_pace);
   const speeds = ps ? ps.speed.filter(Number.isFinite).sort((a, b) => b - a) : [];
-  const bestPace = bestHistory !== null ? bestHistory * 1000 : speeds.length >= 20 ? 1000 / speeds[Math.floor(speeds.length * 0.02)]! : null;
+  const bestPace = sane(bestHistory !== null ? bestHistory * 1000 : speeds.length >= 20 ? 1000 / speeds[Math.floor(speeds.length * 0.02)]! : null);
   const te = pos(history.te), ante = pos(history.anaerobic_te);
 
   const summary: AnalysisSummary = {
