@@ -21,16 +21,16 @@ svg.ico{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-wi
 .logout{width:100%;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:11px;background:none;border:0;color:var(--muted);font:inherit;cursor:pointer;text-align:left}
 .logout:hover{background:var(--panel);color:var(--bad)}
 .content{flex:1;min-width:0;display:flex;flex-direction:column}
-.topbar{display:flex;align-items:center;gap:12px;padding:16px 22px 6px}
+.topbar{display:flex;align-items:center;gap:12px;padding:16px clamp(14px,2vw,32px) 6px}
 .topbar h1{font-size:1.35rem;margin:0;flex:1}
 .hamb{display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:7px;cursor:pointer}
-#view{padding:10px 22px 36px;max-width:1180px;width:100%}
+#view{padding:10px clamp(14px,2vw,32px) 36px;width:100%;max-width:none;min-width:0}
 .scrim{display:none}
 button,select,input{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px 13px}
 button{cursor:pointer}button:hover{border-color:var(--teal)}
 button.on{background:var(--teal);border-color:var(--teal);color:#0d1514;font-weight:600}
 .seg{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:8px 0 16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(200px,16vw,280px),1fr));gap:14px;margin:8px 0 16px}
 .card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
 .card{min-height:112px}
 .card.click{cursor:pointer}.card.click:hover{border-color:var(--teal)}
@@ -41,9 +41,10 @@ button.on{background:var(--teal);border-color:var(--teal);color:#0d1514;font-wei
 .unit{font-size:.9rem;color:var(--muted);font-weight:400}
 .sub{color:var(--muted);font-size:.85rem}
 .empty{color:var(--muted);padding:16px 4px;font-style:italic}
-.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}
+.panel{min-width:0}
 .chartwrap{position:relative}
-svg.chart{width:100%;height:auto;display:block;touch-action:manipulation}
+svg.chart{width:100%;height:auto;display:block;touch-action:manipulation;overflow:visible}
 svg.chart text{fill:var(--muted);font-size:10px}
 .tip{position:absolute;pointer-events:none;background:#0c0e11;border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:.78rem;white-space:nowrap;transform:translate(-50%,-125%);z-index:3}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-top:6px}
@@ -62,7 +63,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .tabs{display:flex;gap:6px;margin-bottom:12px}
 .tabs a{padding:7px 14px;border-radius:10px;background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
 .tabs a.active{background:var(--teal);border-color:var(--teal);color:#0d1514;font-weight:600}
-.split{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start}
+.split{display:grid;grid-template-columns:minmax(300px,clamp(300px,26vw,460px)) minmax(0,1fr);gap:16px;align-items:start}
 .wlist{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 240px);overflow-y:auto;padding:10px 2px 10px 0}
 .wrow{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
 .wrow:hover{border-color:var(--teal)}
@@ -168,7 +169,14 @@ export const DASHBOARD_JS = String.raw`(function () {
   function chart(opts) {
     var pts = opts.points || [], vals = numbers(pts.map(function (p) { return p.v; }));
     if (!vals.length) return empty(opts.emptyText || "No data in this range");
-    var W = 640, H = 220, L = 44, R = 8, T = 12, B = 24, n = pts.length;
+    var H = 220, L = 44, R = 8, T = 12, B = 24, n = pts.length;
+    var wrap = h("div", { "class": "chartwrap" });
+    var tip = h("div", { "class": "tip hidden" });
+    wrap.appendChild(tip);
+    var curW = 0;
+    // The viewBox always equals the rendered pixel width, so text and strokes keep their size and only the plot area grows.
+    function draw(W) {
+    curW = W;
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     if (opts.kind === "bar" || opts.zero) lo = Math.min(0, lo);
     var step = niceStep(Math.max((hi - lo) / 4, 0.0001));
@@ -183,7 +191,7 @@ export const DASHBOARD_JS = String.raw`(function () {
       svg.appendChild(s("line", { x1: L, x2: W - R, y1: Y(t), y2: Y(t), stroke: "currentColor", "stroke-opacity": "0.1" }));
       svg.appendChild(s("text", { x: L - 5, y: Y(t) + 3, "text-anchor": "end", text: fmt(t) }));
     }
-    var ticks = Math.min(5, n);
+    var ticks = Math.min(n, Math.max(2, Math.min(12, Math.floor(iw / 110))));
     for (var k = 0; k < ticks; k++) {
       var idx = ticks === 1 ? 0 : Math.round(k * (n - 1) / (ticks - 1));
       svg.appendChild(s("text", { x: X(idx), y: H - 7, "text-anchor": "middle", text: pts[idx].label }));
@@ -213,9 +221,10 @@ export const DASHBOARD_JS = String.raw`(function () {
       svg.appendChild(s("line", { x1: L, x2: W - R, y1: Y(opts.mean), y2: Y(opts.mean), stroke: "var(--purple)", "stroke-dasharray": "4 3", "stroke-opacity": "0.9" }));
       svg.appendChild(s("text", { x: W - R - 2, y: Y(opts.mean) - 3, "text-anchor": "end", text: "avg " + fmt(opts.mean) }));
     }
-    var wrap = h("div", { "class": "chartwrap" }, svg);
-    var tip = h("div", { "class": "tip hidden" });
-    wrap.appendChild(tip);
+    var old = wrap.querySelector("svg.chart");
+    if (old) wrap.removeChild(old);
+    tip.classList.add("hidden");
+    wrap.insertBefore(svg, tip);
     function show(i) {
       var p = pts[i];
       tip.textContent = p.tip || (p.label + ": " + fmt(p.v));
@@ -232,6 +241,17 @@ export const DASHBOARD_JS = String.raw`(function () {
       svg.appendChild(hit);
     });
     svg.addEventListener("pointerleave", function (ev) { if (ev.pointerType === "mouse") tip.classList.add("hidden"); });
+    }
+    draw(640);
+    function fit() {
+      var w = Math.round(wrap.clientWidth);
+      if (w >= 240 && w !== curW) draw(Math.min(w, 3000));
+    }
+    if (typeof ResizeObserver === "function") new ResizeObserver(fit).observe(wrap);
+    else {
+      var onResize = function () { if (!wrap.isConnected) window.removeEventListener("resize", onResize); else fit(); };
+      window.addEventListener("resize", onResize);
+    }
     return wrap;
   }
   function legend(items) {
