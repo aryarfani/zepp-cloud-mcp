@@ -80,10 +80,6 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .unknown{color:var(--warn)}
 .hidden{display:none}
 .err{color:var(--bad)}
-.tabs{display:inline-flex;gap:3px;margin-bottom:12px;padding:3px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
-.tabs a{padding:6px 15px;border-radius:9px;color:var(--muted);font-size:.88rem;transition:background .15s,color .15s}
-.tabs a:hover{color:var(--text)}
-.tabs a.active{background:var(--panel3);color:var(--text);box-shadow:inset 0 0 0 1px var(--line2)}
 .sk{border-radius:10px;background:linear-gradient(90deg,var(--panel) 0%,var(--panel2) 40%,var(--panel) 80%);background-size:220% 100%;animation:shimmer 1.4s linear infinite}
 @keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
 .skel .cards{margin-top:6px}
@@ -91,15 +87,15 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .split{display:grid;grid-template-columns:minmax(300px,clamp(300px,25vw,430px)) minmax(0,1fr);gap:14px;align-items:start}
 .wlist-pane{display:flex;flex-direction:column;min-height:0;min-width:0;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent 40%),var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:10px 8px 4px 10px}
-.wfilter{display:flex;flex-direction:column;gap:8px;padding:0 2px 8px 0}
+.wfilter{display:flex;gap:8px;padding:0 2px 8px 0;align-items:stretch}
+.wsearch-wrap{flex:1;min-width:0}
 .wsearch{width:100%;padding:8px 12px 8px 34px;background:var(--panel2);border-radius:11px}
 .wsearch-wrap{position:relative}
 .wsearch-wrap svg{position:absolute;left:11px;top:50%;margin-top:-8px;width:16px;height:16px;color:var(--faint);pointer-events:none}
-.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
-.chip{flex:none;display:inline-flex;align-items:center;gap:6px;padding:4px 11px 4px 8px;border-radius:999px;font-size:.8rem;color:var(--muted);background:var(--panel2);border:1px solid var(--line)}
-.chip svg{width:14px;height:14px;color:var(--c,var(--muted))}
-.chip .cn{color:var(--faint);font-size:.72rem}
-.chip.on{background:rgba(45,212,191,.12);border-color:rgba(45,212,191,.55);color:var(--text);font-weight:550}
+.wtype-wrap{position:relative;flex:none;width:132px}
+.wtype{width:100%;appearance:none;-webkit-appearance:none;padding:8px 28px 8px 11px;background:var(--panel2);border-radius:11px;color:var(--text);font:inherit;font-size:.84rem;text-overflow:ellipsis;cursor:pointer}
+.wtype option{background:#12161d;color:var(--text)}
+.wtype-wrap svg{position:absolute;right:9px;top:50%;margin-top:-7px;width:14px;height:14px;color:var(--faint);pointer-events:none;transform:rotate(-90deg)}
 .wmeta{padding:0 4px 6px 2px;font-size:.78rem}
 .wlist{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow-y:auto;position:relative;padding:0 4px 8px 0;overscroll-behavior:contain;scrollbar-width:thin}
 .wdetail{min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:4px;scrollbar-width:thin}
@@ -118,7 +114,8 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .wrow .t{font-weight:580;font-size:.88rem;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wrow .sub{font-size:.74rem;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wrow .r{text-align:right;color:var(--muted);font-size:.78rem;white-space:nowrap;line-height:1.3;font-variant-numeric:tabular-nums}
-.wrow .r div:first-child{color:var(--text);font-weight:550}
+.wrow .r .pv{color:var(--text);font-weight:650;font-size:.9rem}
+.wrow .r .sv{font-size:.72rem;color:var(--faint)}
 .hero{display:flex;align-items:center;gap:14px;padding:16px 18px;margin-bottom:12px;border-radius:var(--r);border:1px solid var(--line2);background:radial-gradient(520px 160px at 100% 0,rgba(45,212,191,.18),transparent 70%),radial-gradient(420px 160px at 0 100%,rgba(167,139,250,.14),transparent 70%),var(--panel);box-shadow:var(--shadow)}
 .hero .htxt{flex:1;min-width:0}
 .hero h2{font-size:1.25rem;font-weight:650;letter-spacing:-.015em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -182,8 +179,8 @@ export const DASHBOARD_JS = String.raw`(function () {
   var navToken = 0;
   var gradSeq = 0;
   var RANGE_VIEWS = { sleep: 1, activity: 1, charge: 1, weight: 1 };
-  var TITLES = { overview: "Overview", sleep: "Sleep", activity: "Activity", charge: "Hybrid Charge", workouts: "Workouts", weight: "Weight", sync: "Sync" };
-  var SUBTITLES = { overview: "Today at a glance", sleep: "Nightly duration, stages and score", activity: "Steps, calories and resting heart rate", charge: "Hybrid Charge energy level", workouts: "Runs, rides, hikes and strength sessions", weight: "Weigh-ins and trend", sync: "Local database and sync health" };
+  var TITLES = { overview: "Overview", sleep: "Sleep", activity: "Activity", charge: "Hybrid Charge", workouts: "Workouts", exercises: "Exercises", weight: "Weight", sync: "Sync" };
+  var SUBTITLES = { overview: "Today at a glance", sleep: "Nightly duration, stages and score", activity: "Steps, calories and resting heart rate", charge: "Hybrid Charge energy level", workouts: "Browse and analyze your workouts", exercises: "Strength exercise ids, names and usage", weight: "Weigh-ins and trend", sync: "Local database and sync health" };
 
   // ---- DOM helpers (text is always set through textContent) --------------------------------------------------------------------------
   function append(el, kids) {
@@ -644,19 +641,23 @@ export const DASHBOARD_JS = String.raw`(function () {
     });
   }
 
-  // ---- workouts: list / detail layout, with an Exercises tab ---------------------------------------------------------
+  // ---- workouts: list / detail layout; exercises have their own page ---------------------------------------------------------
   function exerciseCell(name, known, id) {
     return known ? name : h("span", { class: "unknown mono", title: "Unmapped exercise id " + id }, name);
   }
   function workoutRow(w, selId) {
-    var sets = w.strength_sets > 0 ? " \u00b7 " + w.strength_sets + " sets" : "";
+    var hasDist = isNum(w.distance_m) && w.distance_m > 0, hasSets = w.strength_sets > 0;
+    // right side: primary value on top (distance, or sets for strength), duration underneath; duration alone when there is neither
+    var right = hasDist ? [h("div", { class: "pv", text: fmtKm(w.distance_m) }), h("div", { class: "sv", text: fmtDur(w.duration_s) })]
+      : hasSets ? [h("div", { class: "pv", text: w.strength_sets + (w.strength_sets === 1 ? " set" : " sets") }), h("div", { class: "sv", text: fmtDur(w.duration_s) })]
+      : [h("div", { class: "pv", text: fmtDur(w.duration_s) })];
     return h("a", { class: "wrow" + (w.workout_id === selId ? " sel" : ""), href: "#/workouts/" + encodeURIComponent(w.workout_id), onclick: function () { if (state.wkUi) state.wkUi.skipScroll = true; } }, [
       sportChip(w.activity_type),
       h("div", { class: "wmain" }, [
         h("div", { class: "t" }, [typeName(w.activity_type), " ", typeBadge(w, true)]),
-        h("div", { class: "sub", text: shortDate(w.started_date) + " \u00b7 " + localTime(w.started_at) + sets })
+        h("div", { class: "sub", text: shortDate(w.started_date) + " \u00b7 " + localTime(w.started_at) })
       ]),
-      h("div", { class: "r" }, [h("div", { text: fmtDur(w.duration_s) }), h("div", { text: isNum(w.distance_m) && w.distance_m > 0 ? fmtKm(w.distance_m) : "\u2014" })])
+      h("div", { class: "r" }, right)
     ]);
   }
   function renderDetail(pane, id, token) {
@@ -952,9 +953,11 @@ export const DASHBOARD_JS = String.raw`(function () {
       box.appendChild(analysisView(w, r.analysis));
     }).catch(function (e) { if (token === navToken) { clear(box); box.appendChild(panel("", h("div", { class: "empty err", text: "Could not load workout data: " + e.message }))); } });
     return box;
-  }  function exercisesTab(box, token) {
+  }
+  function viewExercises(box, token) {
     return api("exercises").then(function (r) {
       if (token !== navToken) return;
+      clear(box);
       var list = r.exercises || [];
       if (!list.length) { box.appendChild(panel("", empty("No strength sets stored yet"))); return; }
       var note = r.unknown_count ? h("p", { class: "sub" }, [h("span", { class: "badge warn", text: r.unknown_count + " unmapped" }), " Add these ids to ", h("code", { text: "src/zepp/strength-exercises.ts" }), " after checking them in the Zepp app. Open the example workout to see where each was logged."]) : h("p", { class: "sub", text: "Every exercise id has a name." });
@@ -969,17 +972,12 @@ export const DASHBOARD_JS = String.raw`(function () {
   // The list is built once per visit. Opening a workout (hash change inside #/workouts) only updates the highlight and the
   // detail pane (ui.select); the list keeps its loaded pages and scroll position. Pages load through an IntersectionObserver
   // on a sentinel at the end of the list's own scroll container, with a Load more button only when the API is missing.
-  // Search and the sport chips reset the list through the API (type and q parameters).
+  // Search and the sport dropdown reset the list through the API (type and q parameters).
   function viewWorkouts(box, token, rest) {
-    var tabs = h("div", { class: "tabs" }, [
-      h("a", { href: "#/workouts", class: rest !== "exercises" ? "active" : "", text: "Workouts" }),
-      h("a", { href: "#/workouts/exercises", class: rest === "exercises" ? "active" : "", text: "Exercises" })
-    ]);
-    clear(box); box.appendChild(tabs);
+    clear(box);
     state.wkUi = null;
-    if (rest === "exercises") return exercisesTab(box, token);
     var wk = state.wk, hasIO = typeof IntersectionObserver === "function";
-    var ui = { box: box, gen: 0, loading: false, done: false, failed: false, rows: {}, selId: "", skipScroll: false, observer: null, chips: {} };
+    var ui = { box: box, gen: 0, loading: false, done: false, failed: false, rows: {}, selId: "", skipScroll: false, observer: null, sel: null };
     ui.split = h("div", { class: "split" });
     ui.listPane = h("div", { class: "wlist-pane" });
     ui.detailPane = h("div", { class: "wdetail" });
@@ -1030,10 +1028,7 @@ export const DASHBOARD_JS = String.raw`(function () {
       });
     }
     function paintChips() {
-      Object.keys(ui.chips).forEach(function (k) {
-        var on = k === (wk.type || "");
-        ui.chips[k].classList.toggle("on", on); ui.chips[k].setAttribute("aria-pressed", on ? "true" : "false");
-      });
+      if (ui.sel) ui.sel.value = wk.type || "";
     }
     function resetList(type, q) {
       ui.gen++; ui.loading = false; ui.done = false; ui.failed = false;
@@ -1062,26 +1057,21 @@ export const DASHBOARD_JS = String.raw`(function () {
       return renderDetail(ui.detailPane, id, ++navToken);
     };
 
-    function chip(type, label, count) {
-      var fam = type ? sportFamily(type) : "gen";
-      var el = h("button", { type: "button", "class": "chip f-" + fam, "aria-pressed": "false", onclick: function () { if ((wk.type || "") !== type) resetList(type); } }, [
-        type ? sportIcon(type) : null, h("span", { text: label }), count !== undefined ? h("span", { "class": "cn", text: String(count) }) : null
-      ]);
-      ui.chips[type] = el;
-      return el;
-    }
     function paintList() {
       clear(ui.listPane);
       var total = 0; (wk.types || []).forEach(function (t) { total += t.n; });
-      ui.chips = {};
-      var chips = h("div", { "class": "chips", role: "group", "aria-label": "Filter by sport" }, [chip("", "All", total)].concat((wk.types || []).map(function (t) { return chip(t.type, typeName(t.type), t.n); })));
-      var input = h("input", { type: "search", "class": "wsearch", "aria-label": "Search workouts", placeholder: "Search workouts (sport, date, month)", value: wk.q || "", autocomplete: "off", maxlength: "60" });
+      var opts = [h("option", { value: "", text: "All sports (" + total + ")" })].concat((wk.types || []).map(function (t) { return h("option", { value: t.type, text: typeName(t.type) + " (" + t.n + ")" }); }));
+      var sel = h("select", { "class": "wtype", "aria-label": "Filter by sport" }, opts);
+      ui.sel = sel;
+      sel.addEventListener("change", function () { if ((wk.type || "") !== sel.value) resetList(sel.value); });
+      var typeWrap = h("div", { "class": "wtype-wrap" }, [sel, ico("chevron")]);
+      var input = h("input", { type: "search", "class": "wsearch", "aria-label": "Search workouts", placeholder: "Search workouts", title: "Search by sport, date or month", value: wk.q || "", autocomplete: "off", maxlength: "60" });
       var timer = 0;
       input.addEventListener("input", function () {
         if (timer) clearTimeout(timer);
         timer = setTimeout(function () { timer = 0; if (state.wkUi === ui && (input.value.trim() !== (wk.q || ""))) resetList(wk.type, input.value.trim()); }, 300);
       });
-      ui.listPane.appendChild(h("div", { "class": "wfilter" }, [h("div", { "class": "wsearch-wrap" }, [ico("search"), input]), chips]));
+      ui.listPane.appendChild(h("div", { "class": "wfilter" }, [h("div", { "class": "wsearch-wrap" }, [ico("search"), input]), typeWrap]));
       ui.listPane.appendChild(h("div", { "class": "seg wmeta" }, [ui.count]));
       ui.listPane.appendChild(ui.list);
       ui.list.appendChild(ui.end);
@@ -1115,6 +1105,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     var view = i < 0 ? raw : raw.slice(0, i), rest = i < 0 ? "" : raw.slice(i + 1);
     try { rest = decodeURIComponent(rest); } catch (e) { rest = ""; }
     if (!TITLES[view]) view = "overview";
+    if (view === "workouts" && rest === "exercises") { view = "exercises"; rest = ""; }
     return { view: view, rest: rest };
   }
   function renderRange(view) {
@@ -1126,6 +1117,7 @@ export const DASHBOARD_JS = String.raw`(function () {
   }
   function closeMenu() { $("sidebar").classList.remove("open"); $("scrim").classList.remove("open"); }
   function route() {
+    if (/^#\/workouts\/exercises\/?$/.test(window.location.hash)) { try { window.history.replaceState(null, "", "#/exercises"); } catch (e) { /* keep the old hash, parseRoute maps it */ } }
     var r = parseRoute(), box = $("view");
     document.title = TITLES[r.view] + " | Zepp";
     $("title").textContent = TITLES[r.view];
@@ -1135,15 +1127,15 @@ export const DASHBOARD_JS = String.raw`(function () {
     renderRange(r.view);
     // Opening another workout must not rebuild the list: only the highlight and the detail pane change.
     var live = state.wkUi;
-    if (r.view === "workouts" && r.rest !== "exercises" && live && live.box === box && box.contains(live.split)) {
+    if (r.view === "workouts" && live && live.box === box && box.contains(live.split)) {
       return Promise.resolve(live.select(r.rest)).catch(function () {});
     }
     var token = ++navToken;
     if (live && live.observer) live.observer.disconnect();
     state.wkUi = null;
-    $("content").classList.toggle("fit", r.view === "workouts" && r.rest !== "exercises");
+    $("content").classList.toggle("fit", r.view === "workouts");
     clear(box); box.appendChild(skeleton());
-    var views = { overview: viewOverview, sleep: viewSleep, activity: viewActivity, charge: viewCharge, workouts: viewWorkouts, weight: viewWeight, sync: viewSync };
+    var views = { overview: viewOverview, sleep: viewSleep, activity: viewActivity, charge: viewCharge, workouts: viewWorkouts, exercises: viewExercises, weight: viewWeight, sync: viewSync };
     var p;
     try { p = views[r.view](box, token, r.rest); } catch (e) { p = Promise.reject(e); }
     return Promise.resolve(p).catch(function (e) {
@@ -1186,6 +1178,7 @@ const ICONS = {
   activity: "M22 12h-4l-3 9L9 3l-3 9H2",
   charge: "M13 2 3 14h9l-1 8 10-12h-9z",
   workouts: "M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11",
+  exercises: "M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1zM8 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2M8.5 11.5l1.2 1.2 2.1-2.4M8.5 16.5l1.2 1.2 2.1-2.4M14.5 12h2.5M14.5 17h2.5",
   weight: "M12 3a4 4 0 0 0-4 4h8a4 4 0 0 0-4-4zM5 7h14l1 13H4z",
   sync: "M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M21 4v5h-5M3 20v-5h5",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
@@ -1199,6 +1192,7 @@ export const NAV_ITEMS: ReadonlyArray<{ route: keyof typeof ICONS; label: string
   { route: "activity", label: "Activity" },
   { route: "charge", label: "Hybrid Charge" },
   { route: "workouts", label: "Workouts" },
+  { route: "exercises", label: "Exercises" },
   { route: "weight", label: "Weight" },
   { route: "sync", label: "Sync" }
 ];
