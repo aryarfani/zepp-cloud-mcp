@@ -133,7 +133,7 @@ No code change or Zepp password is required.
 
 The server includes the reviewed ZeppBridge mappings for daily activity, sleep, HR, HRV/RMSSD, readiness, stress, SpO2, respiratory rate, PAI, training load, VO2max, lactate threshold and workout details where Zepp supplies them.
 
-Weight and blood-pressure retrieval are deliberately not exposed. Missing data remains missing; it is not converted to zero or fabricated. Empty Zepp event responses are not automatically treated as proof that a capability is unsupported.
+Weight (`get_weight`), blood pressure (`get_blood_pressure`), Hybrid Charge (`get_hybrid_charge`), emotion/spot-stress events (`get_emotion_events`) and an event-stream discovery tool (`list_event_types`) were added later (the original release left weight and blood pressure out without recording a reason). Missing data remains missing; it is not converted to zero or fabricated. Empty Zepp event responses are not automatically treated as proof that a capability is unsupported.
 
 Workout detail follows the verified Zepp semantics used by ZeppBridge, including power, ground-contact time, vertical oscillation, vertical ratio, GPS/elevation and Zepp's equivalent pace. Equivalent pace is kept separate from ordinary pace rather than derived from speed.
 

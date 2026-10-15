@@ -61,7 +61,13 @@ An empty event response is not automatically treated as proof that a watch/accou
 
 Reviewed raw metrics currently cover HRV SDNN/RMSSD, readiness, respiratory rate, skin temperature, lactate threshold, daily health, blood oxygen, all-day stress, PAI, ODI and OSA event streams.
 
-Weight and blood pressure are deliberately excluded.
+Weight and blood pressure were excluded from the original reviewed set (no rationale was recorded); they are now exposed by dedicated tools, outside `get_raw_metric`:
+
+- `get_weight`: `GET /users/{id}/members/-1/weightRecords` (`fromTime`/`toTime` in seconds, `limit` up to 300, `isForward=0`). Verified fields: `generatedTime` (seconds), `summary.weight/height/bmi/bodyStyle`. No other body-composition field names have been observed, so none are guessed.
+- `get_blood_pressure`: `GET /users/me/bloodPressure` (`days` must be 1-14; 30 is rejected with HTTP 400; `toDate` is `yyyy-MM-dd`; `sourceArrayStr=com.huami.midong.associated,com.huami.midong`) plus the `blood_pressure/real_data` event stream. Both return empty lists for an account without readings, so the record layout is read tolerantly and unverified.
+- `get_hybrid_charge`: `/v2/users/me/events` `Charge/real_data` (one event per UTC day, `samples[]` with `s` = millisecond offset from `startTime`, `total`, `mental`, `physical`, `status`; about 150 KB per day) and `Charge/insight_data` (values passed through, meaning undocumented). `Charge/stress_data` carries an opaque base64 `stressInfo` blob that is not decoded.
+- `get_emotion_events`: `/users/{id}/events` `single_stress` (value is a 0-100 string) and `/v2/users/me/events` `Emotion/real_data` (empty for this account; unverified layout).
+- `list_event_types`: probes a curated catalogue of streams with one `limit=1` request each; `/users/me/fileInfo/events` is not a stream manifest (it requires `eventType` and returns a file index).
 
 ## Data limits and caching
 
