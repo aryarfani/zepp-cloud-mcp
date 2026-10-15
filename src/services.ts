@@ -9,6 +9,7 @@ import { getRecovery } from "./zepp/recovery";
 import { getSleep } from "./zepp/sleep";
 import { getTrainingStatus } from "./zepp/training";
 import { getWorkoutRoute, getWorkoutSamples, type WorkoutRouteResult, type WorkoutSampleField, type WorkoutSamplesResult } from "./zepp/workout-detail";
+import { getStrengthSets, type StrengthSetsResult } from "./zepp/strength";
 import { getWorkout, listWorkouts, type WorkoutDetail, type WorkoutSummary } from "./zepp/workouts";
 import type { DailySummary, HeartRateDay, MetricPoint, RecoveryDay, SleepNight, TrainingStatusDay } from "./zepp/types";
 
@@ -29,6 +30,7 @@ export interface Services extends ServiceContext {
   getWorkout(workoutId: string): Promise<Envelope<WorkoutDetail>>;
   getWorkoutSamples(workoutId: string, fields: readonly WorkoutSampleField[], maxPoints?: number): Promise<Envelope<WorkoutSamplesResult>>;
   getWorkoutRoute(workoutId: string, maxPoints?: number): Promise<Envelope<WorkoutRouteResult>>;
+  getStrengthSets(workoutId: string): Promise<Envelope<StrengthSetsResult>>;
 }
 
 export function createServices(config: AppConfig, fetchImpl: typeof fetch = fetch): Services {
@@ -45,6 +47,7 @@ export function createServices(config: AppConfig, fetchImpl: typeof fetch = fetc
     listWorkouts: (range, activityType, limit) => listWorkouts(ctx, range, activityType, limit),
     getWorkout: workoutId => getWorkout(ctx, workoutId),
     getWorkoutSamples: (workoutId, fields, maxPoints) => getWorkoutSamples(ctx, workoutId, fields, maxPoints),
-    getWorkoutRoute: (workoutId, maxPoints) => getWorkoutRoute(ctx, workoutId, maxPoints)
+    getWorkoutRoute: (workoutId, maxPoints) => getWorkoutRoute(ctx, workoutId, maxPoints),
+    getStrengthSets: workoutId => getStrengthSets(ctx, workoutId)
   };
 }

@@ -68,6 +68,11 @@ export function createZeppMcpServer(services: Services): McpServer {
     inputSchema: z.object({ workout_id: z.string().min(1).max(180), max_points: z.number().int().min(2).max(5000).default(1000) }), annotations
   }, async ({ workout_id, max_points }) => safe(services, () => services.getWorkoutRoute(workout_id, max_points)));
 
+  server.registerTool("get_strength_sets", {
+    description: "Get set-by-set details for one strength workout ID returned by list_workouts: exercise name, reps, weight (null for bodyweight), duration and average heart rate per set, plus per-exercise rollups (sets, total reps, volume in kg, max weight) and totals. Exercise names come from a small hand-maintained table; unknown exercise IDs are reported as unknown_<id>.",
+    inputSchema: z.object({ workout_id: z.string().min(1).max(180) }), annotations
+  }, async ({ workout_id }) => safe(services, () => services.getStrengthSets(workout_id)));
+
   server.registerTool("get_metric_series", {
     description: "Get a normalized scalar time series for a reviewed metric.",
     inputSchema: z.object({ metric: z.enum(SERIES_METRIC_IDS), ...rangeShape, limit: z.number().int().min(1).max(5000).default(1000) }), annotations

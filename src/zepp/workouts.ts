@@ -4,6 +4,7 @@ import { noData, ok, type Envelope } from "../response";
 import type { ServiceContext } from "../services";
 import type { DateRange } from "../time";
 import { buildZeppRequest } from "./endpoints";
+import { hasStrengthSets } from "./strength";
 import { firstValue, numericValue, objectValue, parseTimestampMs, sourceScope, topLevelKeys } from "./normalize";
 import type { SourceScope } from "./types";
 
@@ -220,7 +221,10 @@ function availableDetail(detail: Record<string, unknown>): string[] {
     ["ground_contact_time", ["runPosture"]], ["vertical_oscillation", ["runPosture"]], ["vertical_ratio", ["runPosture"]],
     ["equivalent_pace", ["equivPace"]], ["route", ["longitude_latitude"]], ["elevation", ["altitude", "time_delta_altitude"]]
   ];
-  return keys.flatMap(([label, upstream]) => upstream.some(key => typeof detail[key] === "string" && (detail[key] as string).length > 0) ? [label] : []);
+  const available = keys.flatMap(([label, upstream]) => upstream.some(key => typeof detail[key] === "string" && (detail[key] as string).length > 0) ? [label] : []);
+  // Strength workouts (zepp_type 52) store one set per `lap` row; the detail payload itself carries no type field.
+  if (hasStrengthSets(detail)) available.push("strength_sets");
+  return available;
 }
 
 export async function getWorkout(ctx: ServiceContext, workoutId: string): Promise<Envelope<WorkoutDetail>> {
