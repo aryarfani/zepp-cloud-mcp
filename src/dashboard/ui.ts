@@ -164,24 +164,29 @@ svg.route{position:absolute;inset:0;width:100%;height:100%;display:block;pointer
 .maplegend .bar{height:6px;border-radius:3px;margin:4px 0 3px;background:linear-gradient(90deg,#f97316,#eab308,#22c55e)}
 .maplegend .ends{display:flex;justify-content:space-between}
 .bm{display:block;width:100%;height:auto}
-.bm .m-n{fill:#566072;stroke:#05070b;stroke-width:.6}
-.bm .m-p{fill:#ef4444;stroke:#05070b;stroke-width:.6;filter:drop-shadow(0 0 2px rgba(239,68,68,.45))}
-.bm .m-s{fill:#f59e0b;stroke:#05070b;stroke-width:.6}
-.bm .m-b{fill:#384050;stroke:#05070b;stroke-width:.6}
-.bm-sm{width:35px;height:62px;flex:none}
-.bm-sm .m-n{stroke-width:1.4}
-.bm-sm .m-p,.bm-sm .m-s,.bm-sm .m-b{stroke-width:1.4}
-.bm-sm .m-p{filter:none}
-.bm-card .bm-body{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
-.bm-fig{flex:0 1 330px;min-width:220px}
-.bm-fig .bm{max-height:360px}
-.bm-lbl{display:flex;justify-content:space-around;margin-top:4px;font-size:.72rem;color:var(--faint);letter-spacing:.06em;text-transform:uppercase}
-.bm-legend{flex:1 1 220px;min-width:200px;display:flex;flex-direction:column;gap:12px}
-.bm-key{display:flex;gap:10px;align-items:flex-start}
-.bm-key .sub{font-size:.8rem;margin-top:2px}
-.bm-key .dot{flex:none;width:12px;height:12px;border-radius:50%;margin-top:4px}
-.bm-key .dot.p{background:#ef4444}.bm-key .dot.s{background:#f59e0b}.bm-key .dot.n{background:#566072}
-.bm-note{margin:4px 0 0;padding:10px 12px;font-size:.78rem;line-height:1.4;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.bm path{stroke-linejoin:round}
+.bm .bo path,.bm path.bo,.bm g.bo path{fill:#fff;stroke:#fff;stroke-width:2.8}
+.bm .b path{fill:#c9ccd3;stroke:none}
+.bm .m-n,.bm .m-p,.bm .m-s{stroke:#fff;stroke-width:1.2}
+.bm .m-n{fill:#c9ccd3}
+.bm .m-p{fill:#e8362f}
+.bm .m-s{fill:#f7a600}
+.bm-sm{width:66px;height:66px;flex:none}
+.bm-sm .bo path{stroke-width:5}
+.bm-sm .m-n,.bm-sm .m-p,.bm-sm .m-s{stroke-width:2.4}
+.bm-card h2{text-transform:uppercase;letter-spacing:.04em}
+.bm-card .bm-body{display:flex;gap:28px;align-items:center;flex-wrap:wrap;justify-content:center}
+.bm-fig{flex:0 1 460px;min-width:260px}
+.bm-fig .bm{max-height:420px}
+.bm-lbl{display:flex;justify-content:space-around;margin-top:2px;font-size:.72rem;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+.bm-lists{flex:1 1 200px;min-width:190px;display:flex;flex-direction:column;gap:16px}
+.bm-lt{display:flex;align-items:center;gap:8px}
+.bm-list .sub{margin:3px 0 0 20px;font-size:.82rem}
+.dot{flex:none;width:12px;height:12px;border-radius:50%;display:inline-block}
+.dot.p{background:#e8362f}.dot.s{background:#f7a600}.dot.n{background:#c9ccd3}
+.bm-legend{display:flex;flex-wrap:wrap;gap:8px 22px;justify-content:center;margin:12px 0 4px;font-size:.82rem;color:var(--muted)}
+.bm-key{display:inline-flex;align-items:center;gap:8px}
+.bm-note{margin:8px 0 0;padding:10px 12px;font-size:.78rem;line-height:1.4;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:10px}
 .syncctl{width:100%;margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
 .synctop{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .syncbtn{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:999px;font-weight:650}
@@ -869,74 +874,91 @@ export const DASHBOARD_JS = String.raw`(function () {
       }
     }).catch(function (e) { if (token === navToken) { clear(pane); pane.appendChild(h("div", { class: "empty err", text: "Could not load: " + e.message })); } });
   }
-  // ---- body map: front and back silhouettes with muscle regions (inline SVG, no external assets) ---------------------------------
-  // Shapes are drawn for the left half of each figure (x < 50) and mirrored for the right half. The colouring is an estimate derived
-  // from the exercise ids of a workout (Zepp/Gadgetbridge catalogue), not something the watch measured.
+  // ---- body map: front and back figures with one shape per muscle group (own inline SVG artwork, no external assets) ---------------
+  // Each figure is drawn for its left half (x < 60) and mirrored for the right half; the head is drawn once. Every muscle id of the
+  // catalogue maps to one or more regions ("neck" and "upper_back" also cover the traps, "forearms" both forearms and so on).
+  // The colouring is an estimate derived from the exercise ids of a workout (Zepp/Gadgetbridge catalogue), not measured by the watch.
   var BM_LABEL = { abs: "Abs", front_delts: "Front delts", chest: "Chest", obliques: "Obliques", biceps: "Biceps", forearms: "Forearms", quads: "Quads", calves: "Calves", lats: "Lats", triceps: "Triceps", glutes: "Glutes", hamstrings: "Hamstrings", shins: "Shins", hip_flexors: "Hip flexors", upper_back: "Upper back", lower_back: "Lower back", rear_delts: "Rear delts", neck: "Neck", inner_thighs: "Inner thighs", outer_hips: "Outer hips", lower_abs: "Lower abs" };
-  var BM_FRONT = [
-    ["neck", "M45 27L50 27L50 36L42 34C43 31 44 29 45 27Z"],
-    ["front_delts", "M42 35C36 35 30 37 26 42C23 47 24 53 26 57L35 56C35 48 38 40 42 35Z"],
-    ["chest", "M43 38L50 38L50 62L40 63C35 61 34 54 36 48C37 43 40 40 43 38Z"],
-    ["biceps", "M25.5 59L35 58C35 66 34 76 33 84L26.5 84C25.5 76 25 67 25.5 59Z"],
-    ["forearms", "M26.5 87L33.5 87C33.5 97 32 108 30 119L23.5 119C23.5 108 25 97 26.5 87Z"],
-    ["obliques", "M37 65L43 65L43.5 104L38.5 104C36 92 35 78 37 65Z"],
-    ["abs", "M44.5 64.5H49.3V73.5H44.5ZM44.5 75H49.3V84H44.5ZM44.5 85.5H49.3V94.5H44.5Z"],
-    ["lower_abs", "M44.5 96H49.3V106H44.5Z"],
-    ["outer_hips", "M32 106L37.5 106L37.5 125L31.5 124C31 118 31 111 32 106Z"],
-    ["hip_flexors", "M39 108L48.5 108L48.5 119L40 121C38.5 116 38.5 112 39 108Z"],
-    ["quads", "M32.5 127L45 123L45 150C44 159 43 166 42 173L36 173C34 160 32.5 142 32.5 127Z"],
-    ["inner_thighs", "M46 122L49.5 118L49.5 148L46.5 162L46 150Z"],
-    ["shins", "M36 183L43 183C43 197 42 209 41 217L38 217C37 209 36 197 36 183Z"]
-  ];
-  var BM_BACK = [
-    ["neck", "M45 27L50 27L50 37L42 34C43 31 44 29 45 27Z"],
-    ["upper_back", "M43 37L50 37L50 70L40 63C36 56 34 47 36 42C38 39 40 38 43 37Z"],
-    ["rear_delts", "M36 38C31 39 27 42 25.5 47C24 52 25 56 26 58L35 57C36 51 37 44 36 38Z"],
-    ["triceps", "M25.5 60L35 59C35 67 34 76 33 84L26.5 84C25.5 76 25 68 25.5 60Z"],
-    ["forearms", "M26.5 87L33.5 87C33.5 97 32 108 30 119L23.5 119C23.5 108 25 97 26.5 87Z"],
-    ["lats", "M36.5 60L42 66L50 74L50 92L40 96C37 86 35 72 36.5 60Z"],
-    ["lower_back", "M41 98L50 94L50 109L41 109Z"],
-    ["glutes", "M34 110L50 110L50 129C44 131 37 129 34 121C33 117 33 113 34 110Z"],
-    ["hamstrings", "M34 132L49.5 132L49 152C48 160 45 167 43 173L37 173C35 160 34 144 34 132Z"],
-    ["calves", "M36 182L44 182C45 193 44 205 42 217L38 217C36 205 35 193 36 182Z"]
-  ];
-  // body parts that carry no muscle data (head, hands, knees, feet); drawn in a darker grey
-  var BM_BASE = ["M50 5C44 5 40.5 9.5 40.5 15.5C40.5 22 44 26 50 26C56 26 59.5 22 59.5 15.5C59.5 9.5 56 5 50 5Z", "M24 121L30 121L29 130C28 133 25.5 133 24.5 130Z", "M35.5 175L43 175L42.5 181L36 181Z", "M36.5 219L41.5 219L44 226L35 226Z"];
-  var BM_FIG_W = 100, BM_FIG_GAP = 14, BM_SM_H = 62;
-  function bmFigure(shapes, ctx) {
-    var half = function (mirror) {
-      var g = s("g", mirror ? { transform: "translate(100 0) scale(-1 1)" } : null);
-      shapes.forEach(function (sh) {
-        var cls = ctx.p[sh[0]] ? "m-p" : ctx.s[sh[0]] ? "m-s" : "m-n";
-        var el = s("path", { d: sh[1], "class": cls });
-        if (ctx.titles && !mirror) el.appendChild(s("title", { text: BM_LABEL[sh[0]] + (cls === "m-p" ? " (primary)" : cls === "m-s" ? " (secondary)" : "") }));
-        g.appendChild(el);
-      });
+  var BM_HEAD = "M60 6C54.3 6 50.5 10.5 50.5 17C50.5 24 54.5 29.5 60 29.5C65.5 29.5 69.5 24 69.5 17C69.5 10.5 65.7 6 60 6Z";
+  var BM_FRONT = {
+    base: ["M60 45C60 45 53.5 44.7 50 45.5C46.5 46.3 41.8 48.2 39 50C36.2 51.8 34.1 53.3 33.5 56C32.9 58.7 34.8 62.3 35.5 66C36.2 69.7 36.8 73 37.5 78C38.2 83 39.3 90.7 40 96C40.7 101.3 41.8 105.3 41.5 110C41.2 114.7 39.4 119.7 38.5 124C37.6 128.3 35.6 132.7 36 136C36.4 139.3 37.3 142 41 144C44.7 146 58 148 58 148L60 148L60 45Z",
+      "M23.2 62.3C20.7 62.8 22.2 66.6 21.7 68.7C21.2 70.8 20.7 73 20.3 75.1C19.8 77.3 19.3 79.4 18.9 81.6C18.4 83.7 18 85.9 17.6 88C17.2 90.2 16.9 92.4 16.5 94.5C16 96.6 15.7 98.6 15.2 100.7C14.6 102.7 13.8 104.8 13.1 106.9C12.4 109 11.6 111 11 113.2C10.5 115.3 10.2 117.6 9.8 119.8C9.4 122 9.1 124.1 8.7 126.3C8.3 128.5 8 130.7 7.6 132.8C7.2 135 6.7 137.1 6.1 139.3C5.5 141.4 4.4 143.6 4.2 145.8C4 148.1 4.4 151.5 5 152.7C5.6 153.9 6.9 154.2 8 153.3C9.1 152.4 10.7 149.3 11.4 147.3C12.1 145.2 12 143.1 12.5 141C13 139 13.8 136.9 14.5 134.8C15.3 132.7 16.1 130.7 17 128.6C17.8 126.6 18.6 124.5 19.4 122.5C20.2 120.5 21.2 118.6 21.9 116.5C22.6 114.4 23.1 112.3 23.7 110.2C24.3 108.1 24.8 106 25.5 103.8C26.1 101.7 26.9 99.4 27.6 97.3C28.3 95.2 28.9 93.1 29.6 91C30.3 88.9 30.9 86.8 31.6 84.7C32.2 82.6 32.8 80.5 33.4 78.4C33.9 76.3 34.5 74.2 35.1 72.1C35.7 69.9 38.8 67.3 36.8 65.7C34.8 64.1 25.7 61.8 23.2 62.3Z",
+      "M36.1 137.1C32.3 137.9 35.8 141.6 35.6 143.8C35.5 146 35.4 148.3 35.3 150.5C35.1 152.8 35 155 34.9 157.3C34.9 159.5 35 161.9 35 164.2C35.1 166.5 35.2 168.7 35.3 171C35.4 173.2 35.5 175.5 35.6 177.7C35.7 180 36.2 182.3 36 184.5C35.8 186.7 34.8 188.9 34.5 191.1C34.2 193.3 34.2 195.6 34.2 197.8C34.2 200.1 34.2 202.3 34.3 204.6C34.5 206.9 34.9 209.2 35.1 211.4C35.4 213.7 35.7 216 36 218.2C36.2 220.5 36.4 222.8 36.6 225C36.7 227.3 35.7 230.6 36.9 231.8C38.2 233 42.7 233.3 44.1 232.2C45.5 231.2 44.8 227.8 45.3 225.6C45.7 223.3 46.2 221.1 46.7 218.9C47.2 216.7 47.8 214.5 48.4 212.3C48.9 210.1 49.6 207.9 50.1 205.7C50.5 203.5 50.8 201.2 51.1 199C51.4 196.8 51.7 194.5 51.7 192.3C51.8 190 51 187.7 51.1 185.5C51.3 183.2 52 181 52.4 178.8C52.8 176.6 53.1 174.3 53.5 172.1C53.9 169.9 54.3 167.6 54.6 165.4C55 163.3 55.4 161.2 55.7 159C56 156.8 56.2 154.5 56.5 152.3C56.8 150.1 57 147.8 57.2 145.6C57.5 143.4 61.5 140.3 57.9 138.9C54.4 137.5 39.8 136.3 36.1 137.1Z",
+      "M36 233C37.9 231.5 44.1 231.5 46 233C47.9 234.5 48.8 239.8 47.5 242C46.2 244.2 40.2 246 38 246C35.8 246 34.8 244.2 34.5 242C34.2 239.8 34.1 234.5 36 233Z"],
+    regions: [
+      ["neck", "M54 30.5L60 30.5L60 47C60 47 51.1 46.3 50 45C48.9 43.7 52.5 41.4 53.2 39C53.9 36.6 54 30.5 54 30.5Z"],
+      ["chest", "M59.4 54C59.4 54 54.6 52.6 52 52.5C49.4 52.4 46.2 52.6 44 53.5C41.8 54.4 39.6 55.9 38.5 58C37.4 60.1 37 63.5 37.2 66C37.5 68.5 38.4 71.2 40 73C41.6 74.8 44.7 76.1 47 76.5C49.3 76.9 51.9 76 54 75.5C56.1 75 59.4 73.5 59.4 73.5L59.4 54Z"],
+      ["obliques", "M37.5 80C38.5 78.8 41.9 80.9 44 81C46.1 81.1 49.3 75.2 50.4 80.5C51.5 85.8 51.1 107.1 50.4 113C49.7 118.9 47.5 116.3 46 116C44.5 115.7 42.6 114 41.6 111C40.6 108 40.6 101.8 40 98C39.4 94.2 38.6 91 38.2 88C37.8 85 36.5 81.2 37.5 80Z"],
+      ["abs", "M59.4 78C59.4 78 54.5 77.6 53.2 77.8C51.9 78 52 77.8 51.8 79.4C51.6 81 51.6 86 51.8 87.6C52 89.2 51.9 89 53.2 89.2C54.5 89.4 59.4 89 59.4 89L59.4 78Z"],
+      ["abs", "M59.4 91C59.4 91 54.5 90.6 53.2 90.8C51.9 91 52 90.8 51.8 92.4C51.6 94 51.6 99 51.8 100.6C52 102.2 51.9 102 53.2 102.2C54.5 102.4 59.4 102 59.4 102L59.4 91Z"],
+      ["abs", "M59.4 104C59.4 104 54.5 103.6 53.2 103.8C51.9 104 52 103.8 51.8 105.4C51.6 107 51.6 112 51.8 113.6C52 115.2 51.9 115 53.2 115.2C54.5 115.4 59.4 115 59.4 115L59.4 104Z"],
+      ["lower_abs", "M59.4 117C59.4 117 54.5 116.6 53.2 116.8C51.9 117 52 116.9 51.8 118.4C51.6 120 51.6 124.5 51.8 126.1C52 127.6 51.9 127.5 53.2 127.7C54.5 127.9 59.4 127.5 59.4 127.5L59.4 117Z"],
+      ["hip_flexors", "M50.4 128L59.4 127L59.4 145C59.4 145 52.3 141.5 50 139.5C47.7 137.5 45.4 134.9 45.5 133C45.6 131.1 50.4 128 50.4 128Z"],
+      ["outer_hips", "M37.3 114C38.4 112.4 41.8 114.3 43.3 116.5C44.8 118.7 45.9 123.2 46 127C46.1 130.8 45.2 137.3 44 139C42.8 140.7 39.8 139.2 38.5 137C37.2 134.8 36.7 129.8 36.5 126C36.3 122.2 36.2 115.6 37.3 114Z"],
+      ["front_delts", "M44 51C43.2 50.1 39.2 49.2 37 49.5C34.8 49.8 32.2 50.9 30.5 52.5C28.8 54.1 27.3 56.6 26.5 59C25.7 61.4 25.2 64.5 25.5 67C25.8 69.5 26.8 72.5 28 74C29.2 75.5 31.5 76.7 33 76C34.5 75.3 36.1 72.3 37 70C37.9 67.7 37.7 64.5 38.5 62C39.3 59.5 41.1 56.8 42 55C42.9 53.2 44.8 51.9 44 51Z"],
+      ["biceps", "M21.4 75.1C19.5 75.2 20.9 77.1 20.6 78C20.3 79 20.1 80 19.9 80.9C19.6 81.9 19.4 82.9 19.2 83.9C19 84.8 18.9 85.8 18.7 86.8C18.5 87.8 18.4 88.8 18.2 89.8C18.1 90.8 18 91.8 17.8 92.8C17.7 93.8 17.6 94.8 17.5 95.7C17.3 96.7 15.8 97.9 17.1 98.7C18.4 99.6 23.5 100.9 25 100.7C26.5 100.6 25.8 98.9 26.1 97.9C26.5 97 26.9 96 27.2 95.1C27.6 94.2 27.9 93.2 28.3 92.3C28.6 91.3 28.9 90.4 29.2 89.4C29.6 88.5 29.9 87.5 30.2 86.6C30.4 85.6 30.7 84.7 31 83.7C31.2 82.7 31.5 81.8 31.7 80.8C31.9 79.8 34.1 78.8 32.3 77.9C30.6 76.9 23.4 75.1 21.4 75.1Z"],
+      ["forearms", "M15.3 102.8C13.5 103 14.2 105.7 13.6 107.1C13 108.5 12.3 109.9 11.9 111.4C11.4 112.8 11.2 114.4 10.9 115.9C10.6 117.4 10.3 119 10 120.5C9.7 122.1 9.5 123.6 9.3 125.1C9 126.6 8.8 128.2 8.5 129.7C8.3 131.2 8.1 132.8 7.8 134.3C7.5 135.8 6.1 137.8 6.8 138.8C7.5 139.8 11 140.7 12.1 140.3C13.3 139.8 13 137.3 13.6 135.9C14.1 134.4 14.8 133 15.3 131.6C15.9 130.2 16.5 128.7 17.1 127.3C17.7 125.9 18.3 124.4 18.9 123C19.4 121.6 20 120.2 20.5 118.8C21.1 117.4 21.8 116 22.2 114.5C22.7 113.1 22.8 111.5 23.2 110C23.5 108.5 25.5 106.7 24.2 105.5C22.9 104.3 17 102.5 15.3 102.8Z"],
+      ["quads", "M36.1 137.1C33.1 137.8 35.7 140.9 35.6 142.8C35.4 144.7 35.3 146.6 35.2 148.5C35.1 150.4 35 152.3 35 154.2C35 156.1 34.9 158 35 159.9C35.1 161.9 35.3 163.9 35.5 165.9C35.6 167.8 35.8 169.7 36 171.7C36.2 173.6 36.4 175.5 36.6 177.4C36.8 179.3 35.5 182.1 37.2 183.2C39 184.2 45.4 184.6 47.2 183.8C49.1 183 47.8 180 48.1 178.1C48.4 176.2 48.7 174.4 49 172.5C49.3 170.6 49.6 168.7 49.9 166.8C50.2 164.9 50.5 163.1 50.8 161.2C51 159.4 51.3 157.5 51.5 155.6C51.7 153.7 51.9 151.8 52.1 149.9C52.3 148 52.5 146.1 52.6 144.2C52.8 142.3 55.9 139.7 53.1 138.5C50.4 137.3 39 136.4 36.1 137.1Z"],
+      ["inner_thighs", "M53.8 138.6C53 139.3 53.5 141.5 53.4 143C53.3 144.5 53.1 146 53 147.5C52.8 149 52.6 150.4 52.4 151.9C52.2 153.4 52 154.9 51.8 156.4C51.6 157.8 51.3 159.3 51 160.8C50.8 162.2 50.5 163.6 50.2 165.1C49.9 166.6 49.6 168.1 49.3 169.5C49.1 171 48.2 173.2 48.5 174C48.8 174.7 50.5 174.8 51.1 174.1C51.7 173.4 51.9 171.2 52.3 169.7C52.7 168.2 53.1 166.7 53.5 165.3C53.9 163.9 54.3 162.5 54.6 161.1C55 159.7 55.3 158.2 55.6 156.7C55.9 155.2 56.2 153.7 56.4 152.3C56.7 150.8 56.9 149.3 57.1 147.8C57.2 146.3 57.4 144.9 57.5 143.4C57.7 141.9 58.6 139.7 57.9 138.9C57.3 138.1 54.5 137.9 53.8 138.6Z"],
+      ["shins", "M39.4 187.5C37.5 188.2 38.8 190.7 38.6 192.3C38.4 193.9 38.4 195.5 38.3 197.1C38.2 198.7 38 200.4 38 202C38 203.6 38 205.2 38 206.8C38.1 208.4 38.2 210.1 38.2 211.7C38.3 213.3 38.4 214.9 38.5 216.5C38.6 218.1 38.7 219.8 38.7 221.4C38.8 223 37.9 225.4 38.8 226.2C39.8 227.1 43.3 227.3 44.4 226.6C45.5 225.8 45 223.4 45.4 221.8C45.7 220.2 46.2 218.6 46.6 217C47 215.5 47.4 213.9 47.8 212.3C48.2 210.7 48.7 209.1 49 207.6C49.4 206 49.7 204.4 50 202.8C50.2 201.2 50.3 199.6 50.4 198C50.6 196.4 50.8 194.8 50.8 193.2C50.7 191.5 52.1 189.2 50.2 188.3C48.3 187.3 41.3 186.9 39.4 187.5Z"],
+      ["calves", "M36.3 186.4C35.8 186.9 35.8 188.4 35.5 189.4C35.3 190.4 35 191.4 34.8 192.4C34.7 193.4 34.8 194.5 34.7 195.5C34.7 196.5 34.7 197.5 34.8 198.6C34.8 199.6 34.8 200.6 34.9 201.6C35 202.7 35.1 203.7 35.3 204.7C35.4 205.8 35.7 206.8 35.9 207.9C36.1 208.9 36 210.4 36.5 211C36.9 211.5 38.2 211.6 38.5 211.1C38.8 210.6 38.3 209 38.2 208C38.1 207 38 205.9 37.9 204.9C37.8 203.9 37.8 202.9 37.7 201.8C37.7 200.8 37.7 199.8 37.7 198.8C37.8 197.7 37.8 196.7 37.8 195.7C37.8 194.7 37.8 193.6 38 192.6C38.1 191.6 38.3 190.6 38.5 189.6C38.6 188.6 39.4 187.1 39 186.6C38.7 186 36.9 185.9 36.3 186.4Z"]
+    ]
+  };
+  var BM_BACK = {
+    base: ["M60 45C60 45 53.5 44.7 50 45.5C46.5 46.3 41.8 48.2 39 50C36.2 51.8 34.1 53.3 33.5 56C32.9 58.7 34.8 62.3 35.5 66C36.2 69.7 36.8 73 37.5 78C38.2 83 39.3 90.7 40 96C40.7 101.3 41.8 105.3 41.5 110C41.2 114.7 39.4 119.7 38.5 124C37.6 128.3 35.6 132.7 36 136C36.4 139.3 37.3 142 41 144C44.7 146 58 148 58 148L60 148L60 45Z",
+      "M23.2 62.3C20.7 62.8 22.2 66.6 21.7 68.7C21.2 70.8 20.7 73 20.3 75.1C19.8 77.3 19.3 79.4 18.9 81.6C18.4 83.7 18 85.9 17.6 88C17.2 90.2 16.9 92.4 16.5 94.5C16 96.6 15.7 98.6 15.2 100.7C14.6 102.7 13.8 104.8 13.1 106.9C12.4 109 11.6 111 11 113.2C10.5 115.3 10.2 117.6 9.8 119.8C9.4 122 9.1 124.1 8.7 126.3C8.3 128.5 8 130.7 7.6 132.8C7.2 135 6.7 137.1 6.1 139.3C5.5 141.4 4.4 143.6 4.2 145.8C4 148.1 4.4 151.5 5 152.7C5.6 153.9 6.9 154.2 8 153.3C9.1 152.4 10.7 149.3 11.4 147.3C12.1 145.2 12 143.1 12.5 141C13 139 13.8 136.9 14.5 134.8C15.3 132.7 16.1 130.7 17 128.6C17.8 126.6 18.6 124.5 19.4 122.5C20.2 120.5 21.2 118.6 21.9 116.5C22.6 114.4 23.1 112.3 23.7 110.2C24.3 108.1 24.8 106 25.5 103.8C26.1 101.7 26.9 99.4 27.6 97.3C28.3 95.2 28.9 93.1 29.6 91C30.3 88.9 30.9 86.8 31.6 84.7C32.2 82.6 32.8 80.5 33.4 78.4C33.9 76.3 34.5 74.2 35.1 72.1C35.7 69.9 38.8 67.3 36.8 65.7C34.8 64.1 25.7 61.8 23.2 62.3Z",
+      "M36.1 137.1C32.3 137.9 35.8 141.6 35.6 143.8C35.5 146 35.4 148.3 35.3 150.5C35.1 152.8 35 155 34.9 157.3C34.9 159.5 35 161.9 35 164.2C35.1 166.5 35.2 168.7 35.3 171C35.4 173.2 35.5 175.5 35.6 177.7C35.7 180 36.2 182.3 36 184.5C35.8 186.7 34.8 188.9 34.5 191.1C34.2 193.3 34.2 195.6 34.2 197.8C34.2 200.1 34.2 202.3 34.3 204.6C34.5 206.9 34.9 209.2 35.1 211.4C35.4 213.7 35.7 216 36 218.2C36.2 220.5 36.4 222.8 36.6 225C36.7 227.3 35.7 230.6 36.9 231.8C38.2 233 42.7 233.3 44.1 232.2C45.5 231.2 44.8 227.8 45.3 225.6C45.7 223.3 46.2 221.1 46.7 218.9C47.2 216.7 47.8 214.5 48.4 212.3C48.9 210.1 49.6 207.9 50.1 205.7C50.5 203.5 50.8 201.2 51.1 199C51.4 196.8 51.7 194.5 51.7 192.3C51.8 190 51 187.7 51.1 185.5C51.3 183.2 52 181 52.4 178.8C52.8 176.6 53.1 174.3 53.5 172.1C53.9 169.9 54.3 167.6 54.6 165.4C55 163.3 55.4 161.2 55.7 159C56 156.8 56.2 154.5 56.5 152.3C56.8 150.1 57 147.8 57.2 145.6C57.5 143.4 61.5 140.3 57.9 138.9C54.4 137.5 39.8 136.3 36.1 137.1Z",
+      "M36 233C37.9 231.5 44.1 231.5 46 233C47.9 234.5 48.8 239.8 47.5 242C46.2 244.2 40.2 246 38 246C35.8 246 34.8 244.2 34.5 242C34.2 239.8 34.1 234.5 36 233Z"],
+    regions: [
+      ["neck", "M54 30.5L60 30.5L60 46C60 46 52.6 45.7 51.5 44.5C50.4 43.3 52.8 41.3 53.2 39C53.6 36.7 54 30.5 54 30.5Z"],
+      ["lats", "M36.6 72C37.3 68 40.8 66.7 43 68C45.2 69.3 48.3 75.7 50 80C51.7 84.3 52.8 89.3 53 94C53.2 98.7 52 104.7 51 108C50 111.3 48.5 114 47 114C45.5 114 43.4 111.7 42 108C40.6 104.3 39.5 98 38.6 92C37.7 86 35.9 76 36.6 72Z"],
+      ["lower_back", "M59.4 90C59.4 90 55.1 91.7 54 94C52.9 96.3 53 100.3 53 104C53 107.7 52.9 113.8 54 116C55.1 118.2 59.4 117 59.4 117L59.4 90Z"],
+      ["glutes", "M59.4 119C59.4 119 53.1 117.8 50.5 118C47.9 118.2 45.5 118.5 43.5 120C41.5 121.5 39.4 124 38.6 127C37.9 130 37.8 135 39 138C40.2 141 43.7 143.7 46 145C48.3 146.3 50.8 146.2 53 146C55.2 145.8 59.4 143.5 59.4 143.5L59.4 119Z"],
+      ["outer_hips", "M37.8 111C39 110.1 42.7 111.8 43.4 113.5C44.1 115.2 43.1 119.1 42 121C40.9 122.9 38 125.3 37 125C36 124.7 35.9 121.3 36 119C36.1 116.7 36.6 111.9 37.8 111Z"],
+      ["upper_back", "M36.8 67C37.7 65.9 40.7 65.2 42 66.5C43.3 67.8 44.8 72.7 44.5 74.5C44.2 76.3 41.3 77.8 40 77.5C38.7 77.2 37.1 74.8 36.6 73C36.1 71.2 35.9 68.1 36.8 67Z"],
+      ["upper_back", "M60 41C60 41 55.4 43 53 44.5C50.6 46 47.7 48.2 45.5 50C43.3 51.8 40.2 52.9 40 55C39.8 57.1 42.2 59.7 44 62.5C45.8 65.3 48.3 68.1 51 72C53.7 75.9 60 86 60 86L60 41Z"],
+      ["rear_delts", "M44 52C43.2 51.1 39.2 50.3 37 50.5C34.8 50.7 32.2 51.5 30.5 53C28.8 54.5 27.3 57.2 26.5 59.5C25.7 61.8 25.2 64.6 25.5 67C25.8 69.4 26.8 72.5 28 74C29.2 75.5 31.5 76.7 33 76C34.5 75.3 36.1 72.3 37 70C37.9 67.7 37.7 64.3 38.5 62C39.3 59.7 41.1 57.7 42 56C42.9 54.3 44.8 52.9 44 52Z"],
+      ["triceps", "M21.9 71.5C19.7 71.5 21.3 73.7 21 74.8C20.7 75.9 20.4 77 20.2 78.2C19.9 79.3 19.7 80.4 19.4 81.5C19.2 82.7 19 83.8 18.9 84.9C18.7 86.1 18.5 87.2 18.4 88.4C18.2 89.5 18.1 90.7 17.9 91.8C17.8 93 17.7 94.1 17.5 95.3C17.4 96.4 15.9 97.8 17.1 98.7C18.4 99.7 23.5 100.9 25 100.7C26.6 100.5 25.9 98.6 26.3 97.5C26.7 96.4 27.1 95.3 27.6 94.2C28 93.2 28.4 92.1 28.8 91C29.2 89.9 29.6 88.8 30 87.7C30.3 86.6 30.7 85.5 31.1 84.4C31.4 83.3 31.7 82.2 32 81.1C32.3 80 32.6 78.9 32.9 77.8C33.2 76.7 35.5 75.5 33.7 74.4C31.8 73.4 24 71.4 21.9 71.5Z"],
+      ["forearms", "M15.3 102.8C13.5 103 14.2 105.7 13.6 107.1C13 108.5 12.3 109.9 11.9 111.4C11.4 112.8 11.2 114.4 10.9 115.9C10.6 117.4 10.3 119 10 120.5C9.7 122.1 9.5 123.6 9.3 125.1C9 126.6 8.8 128.2 8.5 129.7C8.3 131.2 8.1 132.8 7.8 134.3C7.5 135.8 6.1 137.8 6.8 138.8C7.5 139.8 11 140.7 12.1 140.3C13.3 139.8 13 137.3 13.6 135.9C14.1 134.4 14.8 133 15.3 131.6C15.9 130.2 16.5 128.7 17.1 127.3C17.7 125.9 18.3 124.4 18.9 123C19.4 121.6 20 120.2 20.5 118.8C21.1 117.4 21.8 116 22.2 114.5C22.7 113.1 22.8 111.5 23.2 110C23.5 108.5 25.5 106.7 24.2 105.5C22.9 104.3 17 102.5 15.3 102.8Z"],
+      ["hamstrings", "M36.1 137.1C32.3 137.7 35.7 140.9 35.6 142.8C35.5 144.8 35.4 146.7 35.3 148.6C35.2 150.5 35.1 152.5 35.1 154.4C35 156.3 35 158.2 35.1 160.2C35.2 162.1 35.4 164.2 35.6 166.2C35.8 168.2 36 170.1 36.2 172C36.4 174 36.6 175.9 36.8 177.8C37 179.8 35.2 182.6 37.4 183.7C39.6 184.8 47.6 185.3 49.9 184.4C52.2 183.6 50.7 180.6 51.2 178.7C51.6 176.8 52.1 174.9 52.5 173C53 171.1 53.4 169.2 53.8 167.3C54.2 165.5 54.7 163.7 55 161.8C55.4 160 55.8 158 56.1 156.1C56.4 154.2 56.6 152.3 56.8 150.4C57 148.5 57.2 146.6 57.4 144.7C57.6 142.7 61.5 140.2 57.9 138.9C54.4 137.6 39.8 136.4 36.1 137.1Z"],
+      ["calves", "M36.7 186.4C34.3 186.9 36.1 188.9 36 190.1C35.8 191.4 35.7 192.6 35.6 193.9C35.6 195.1 35.7 196.4 35.7 197.7C35.8 198.9 35.8 200.2 35.9 201.5C36 202.7 36.2 204 36.4 205.3C36.6 206.6 36.8 207.8 37 209.1C37.3 210.4 37.5 211.7 37.7 212.9C37.9 214.2 37 216 38.2 216.8C39.4 217.5 43.4 217.7 44.7 217.2C45.9 216.6 45.3 214.7 45.7 213.4C46 212.2 46.4 211 46.8 209.7C47.2 208.5 47.6 207.3 47.9 206.1C48.3 204.8 48.6 203.6 48.9 202.3C49.2 201.1 49.4 199.9 49.6 198.6C49.8 197.4 50.1 196.1 50.2 194.9C50.3 193.6 50.4 192.4 50.4 191.1C50.4 189.9 52.5 188.1 50.2 187.3C47.9 186.5 39.1 185.9 36.7 186.4Z"]
+    ]
+  };
+  var BM_FIG = 130; // x offset of the back figure; each figure is 120 wide and about 250 tall
+  var BM_MIRROR = "translate(120 0) scale(-1 1)";
+  function bmFigure(d, ctx, dx) {
+    var root = s("g", dx ? { transform: "translate(" + dx + " 0)" } : null);
+    // silhouette: all outlines first, then all fills, so the body reads as one shape with a clean white outer edge
+    var outline = function (cls) {
+      var g = s("g", { "class": cls }), l = s("g"), r = s("g", { transform: BM_MIRROR });
+      d.base.forEach(function (p) { l.appendChild(s("path", { d: p })); r.appendChild(s("path", { d: p })); });
+      g.appendChild(l); g.appendChild(r); g.appendChild(s("path", { d: BM_HEAD }));
       return g;
     };
-    var fig = s("g", null);
-    BM_BASE.forEach(function (d, i) { fig.appendChild(s("path", { d: d, "class": "m-b" })); });
-    fig.appendChild(half(false)); fig.appendChild(half(true));
-    // the head and the hands are only drawn once on the left: mirror the base parts too
-    var mb = s("g", { transform: "translate(100 0) scale(-1 1)" });
-    BM_BASE.forEach(function (d) { mb.appendChild(s("path", { d: d, "class": "m-b" })); });
-    fig.appendChild(mb);
-    return fig;
+    root.appendChild(outline("bo")); root.appendChild(outline("b"));
+    [false, true].forEach(function (mirror) {
+      var g = s("g", mirror ? { transform: BM_MIRROR } : null);
+      d.regions.forEach(function (sh) {
+        var cls = ctx.p[sh[0]] ? "m-p" : ctx.s[sh[0]] ? "m-s" : "m-n";
+        var el = s("path", { d: sh[1], "class": cls, "data-m": sh[0] });
+        if (ctx.titles) el.appendChild(s("title", { text: BM_LABEL[sh[0]] + (cls === "m-p" ? " (primary)" : cls === "m-s" ? " (secondary)" : "") }));
+        g.appendChild(el);
+      });
+      root.appendChild(g);
+    });
+    return root;
   }
-  /** mus = { p: [muscle ids], s: [muscle ids] } (primary / secondary). size: "lg" (detail card) or "sm" (list row). */
+  /** mus = { p: [muscle ids], s: [muscle ids] } (primary / secondary). size: "lg" (detail card) or "sm" (list row, same figure, same proportions). */
   function bodyMap(mus, size) {
     var ctx = { p: {}, s: {}, titles: size !== "sm" };
     (mus.p || []).forEach(function (m) { ctx.p[m] = true; });
     (mus.s || []).forEach(function (m) { if (!ctx.p[m]) ctx.s[m] = true; });
     var sm = size === "sm";
-    // The figures are about 53 wide and 221 tall. The compact version crops tightly around the two bodies and has an explicit
-    // pixel size with the same aspect as its viewBox, so nothing in the row can stretch or squeeze it.
-    var shift = sm ? 62 : BM_FIG_W + BM_FIG_GAP, vbW = sm ? shift + 53 + 6 : BM_FIG_W * 2 + BM_FIG_GAP - 40;
-    var svg = s("svg", { "class": "bm bm-" + (size || "lg"), viewBox: (sm ? 21 : 20) + " 3 " + vbW + " 226", role: "img", preserveAspectRatio: "xMidYMid meet" });
-    if (sm) { svg.setAttribute("height", String(BM_SM_H)); svg.setAttribute("width", String(Math.round(BM_SM_H * vbW / 226))); }
-    var back = s("g", { transform: "translate(" + shift + " 0)" });
-    back.appendChild(bmFigure(BM_BACK, ctx));
-    svg.appendChild(bmFigure(BM_FRONT, ctx)); svg.appendChild(back);
+    // Both figures share the 246 x 244 viewBox; the compact version has an explicit pixel size with the same aspect, so nothing in the row can stretch it.
+    var svg = s("svg", { "class": "bm bm-" + (size || "lg"), viewBox: "2 4 246 244", role: "img", preserveAspectRatio: "xMidYMid meet" });
+    if (sm) { svg.setAttribute("width", "66"); svg.setAttribute("height", "66"); }
+    svg.appendChild(bmFigure(BM_FRONT, ctx, 0));
+    svg.appendChild(bmFigure(BM_BACK, ctx, BM_FIG));
     var names = function (list) { return (list || []).map(function (m) { return BM_LABEL[m] || m; }).join(", "); };
     svg.setAttribute("aria-label", "Muscles used, front and back. Primary: " + (names(mus.p) || "none") + ". Secondary: " + (names(mus.s) || "none") + ". Estimated from exercise ids.");
     return svg;
@@ -944,15 +966,18 @@ export const DASHBOARD_JS = String.raw`(function () {
   function hasMuscles(m) { return !!(m && ((m.p && m.p.length) || (m.s && m.s.length))); }
   function musclesCard(mus) {
     var names = function (list) { return (list || []).map(function (m) { return BM_LABEL[m] || m; }).join(", "); };
-    var legend = h("div", { "class": "bm-legend" }, [
-      h("div", { "class": "bm-key" }, [h("span", { "class": "dot p" }), h("div", null, [h("b", { text: "Primary muscles" }), h("div", { "class": "sub", text: names(mus.p) || "None" })])]),
-      h("div", { "class": "bm-key" }, [h("span", { "class": "dot s" }), h("div", null, [h("b", { text: "Secondary muscles" }), h("div", { "class": "sub", text: names(mus.s) || "None" })])]),
-      h("div", { "class": "bm-key" }, [h("span", { "class": "dot n" }), h("div", null, [h("b", { text: "Not targeted" })])]),
-      h("p", { "class": "bm-note", text: "Estimate from the exercise ids (Zepp/Gadgetbridge exercise catalogue). The watch does not measure which muscles you used." })
-    ]);
+    var key = function (cls, label) { return h("span", { "class": "bm-key" }, [h("span", { "class": "dot " + cls }), h("span", { text: label })]); };
+    var list = function (cls, title, items) {
+      return h("div", { "class": "bm-list" }, [h("div", { "class": "bm-lt" }, [h("span", { "class": "dot " + cls }), h("b", { text: title })]), h("div", { "class": "sub", text: names(items) || "None" })]);
+    };
     return h("section", { "class": "panel bm-card" }, [
       h("h2", { text: "Muscles used" }),
-      h("div", { "class": "bm-body" }, [h("div", { "class": "bm-fig" }, [bodyMap(mus, "lg"), h("div", { "class": "bm-lbl" }, [h("span", { text: "Front" }), h("span", { text: "Back" })])]), legend])
+      h("div", { "class": "bm-body" }, [
+        h("div", { "class": "bm-fig" }, [bodyMap(mus, "lg"), h("div", { "class": "bm-lbl" }, [h("span", { text: "Front" }), h("span", { text: "Back" })])]),
+        h("div", { "class": "bm-lists" }, [list("p", "Primary muscles", mus.p), list("s", "Secondary muscles", mus.s)])
+      ]),
+      h("div", { "class": "bm-legend" }, [key("p", "Primary muscle used"), key("s", "Secondary muscle used"), key("n", "Non-target muscle")]),
+      h("p", { "class": "bm-note", text: "Estimate from the exercise ids (Zepp/Gadgetbridge exercise catalogue). The watch does not measure which muscles you used." })
     ]);
   }
   // ---- running / walking / cycling detail (pace, heart rate, elevation, splits, route) ------------------------------------------------
