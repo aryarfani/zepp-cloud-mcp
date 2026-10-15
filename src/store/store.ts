@@ -231,7 +231,10 @@ UPDATE sync_runs SET finished_at = ?, ok = 0, status = 'interrupted', error_kind
     const sets = this.db.prepare("SELECT COUNT(*) AS rows, COUNT(DISTINCT workout_id) AS workouts FROM strength_sets").get() as { rows: number; workouts: number };
     const runs = this.db.prepare("SELECT COUNT(*) AS rows FROM sync_runs").get() as { rows: number };
     let bytes: number | null = null;
-    if (this.file !== ":memory:" && existsSync(this.file)) bytes = statSync(this.file).size;
+    if (this.file !== ":memory:" && existsSync(this.file)) {
+      // In WAL mode recent writes live in the -wal file until checkpointed, so count both.
+      bytes = statSync(this.file).size + (existsSync(this.file + "-wal") ? statSync(this.file + "-wal").size : 0);
+    }
     return {
       schema_version: this.schemaVersion(),
       daily_summary: this.coverage("daily_summary", "date"),
