@@ -78,10 +78,14 @@ function textIn(object: Record<string, unknown>, keys: readonly string[]): strin
   return numeric !== undefined ? String(Math.round(numeric)) : undefined;
 }
 
-const SPORT_CODES: Readonly<Record<number, string>> = {
+// Only codes confirmed against the Zepp cloud `type` field of /v1/sport/run/history.json are listed.
+// Note: these differ from the Zepp OS SDK `subType` table (e.g. there 3 = walking, 6 = pool swimming).
+// 14 was confirmed from live swim data (swolf, total_strokes, swim_pool_length populated).
+export const SPORT_CODES: Readonly<Record<number, string>> = {
   1: "outdoor_running",
   6: "walking",
   9: "ride",
+  14: "pool_swimming",
   52: "strength",
   92: "badminton",
   130: "cross_training"

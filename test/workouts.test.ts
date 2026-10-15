@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeWorkoutId, encodeWorkoutId, normalizeWorkoutSummary } from "../src/zepp/workouts";
+import { SPORT_CODES, decodeWorkoutId, encodeWorkoutId, normalizeWorkoutSummary } from "../src/zepp/workouts";
 
 describe("workout identity", () => {
   it("round trips a validated trackid + source and rejects tampering", () => {
@@ -28,5 +28,28 @@ describe("workout summary", () => {
     const workout = normalizeWorkoutSummary({ trackid: "1700000000", source: "run.device", endTime: 1700000600, trainingLoad: -1, vo2Max: -1 }, "Asia/Jakarta");
     expect(workout?.training_load).toBeUndefined();
     expect(workout?.vo2max_ml_kg_min).toBeUndefined();
+  });
+});
+
+describe("sport codes", () => {
+  it("maps the verified cloud type codes", () => {
+    expect(SPORT_CODES).toEqual({
+      1: "outdoor_running",
+      6: "walking",
+      9: "ride",
+      14: "pool_swimming",
+      52: "strength",
+      92: "badminton",
+      130: "cross_training"
+    });
+    const swim = normalizeWorkoutSummary({ trackid: "1700000000", source: "run.device", endTime: 1700000600, type: 14 }, "Asia/Jakarta");
+    expect(swim).toMatchObject({ activity_type: "pool_swimming", zepp_type: 14 });
+  });
+
+  it("keeps unverified codes explicit instead of guessing", () => {
+    for (const type of [8, 10, 16, 22, 24]) {
+      const w = normalizeWorkoutSummary({ trackid: "1700000000", source: "run.device", endTime: 1700000600, type }, "Asia/Jakarta");
+      expect(w?.activity_type).toBe(`unknown:${type}`);
+    }
   });
 });
