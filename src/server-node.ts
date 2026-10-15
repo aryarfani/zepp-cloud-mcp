@@ -4,6 +4,12 @@ import path from 'node:path';
 import { createApp } from './app';
 import { createOAuth } from './oauth';
 import { FileOAuthStore } from './oauth-file-store';
+import { parseConfig } from './config';
+import { createServices, type ServiceContext } from './services';
+import { ZeppStore } from './store/store';
+import { parseSyncConfig } from './sync/config';
+import { createSyncService, type SyncService } from './sync/service';
+import { startSyncScheduler } from './sync/scheduler';
 import { createMemoryCache, DEFAULT_MAX_CACHE_ENTRIES } from './memory-cache';
 if (typeof (globalThis as any).caches === 'undefined') {
   (globalThis as any).caches = { default: createMemoryCache() } as any;
@@ -47,7 +53,33 @@ if (ownerPassword.length >= 16) {
 } else {
   console.warn('[zepp] OAUTH_OWNER_PASSWORD missing or shorter than 16 chars - OAuth disabled, static bearer only');
 }
-const app = createApp({ env, oauth, port: PORT });
+// Local store + daily sync (node:sqlite). A store/sync problem must never stop the MCP server from starting.
+const syncConfig = parseSyncConfig(process.env);
+let syncService: SyncService | null = null;
+try {
+  const store = new ZeppStore(path.resolve(syncConfig.dbPath));
+  const closed = store.closeInterruptedRuns(new Date().toISOString());
+  if (closed) console.warn('[zepp] closed ' + closed + ' interrupted sync run(s) from a previous start');
+  const credentialsOk = Boolean(env.MCP_SECRET && env.ZEPP_APP_TOKEN && env.ZEPP_USER_ID);
+  let zeppCtx: ServiceContext | null = null;
+  if (credentialsOk) {
+    try { zeppCtx = createServices(parseConfig(env)); } catch (e: any) { console.warn('[zepp] sync disabled, invalid Zepp config: ' + (e?.message ?? 'error')); }
+  }
+  if (zeppCtx) {
+    syncService = createSyncService({ ctx: zeppCtx, store, config: syncConfig, log: m => console.log('[zepp] ' + m) });
+    startSyncScheduler({ service: syncService, lastSuccessAt: () => store.lastSuccessfulRun()?.finished_at ?? null, timezone: env.USER_TIMEZONE, log: m => console.log('[zepp] ' + m) });
+  } else {
+    console.warn('[zepp] daily sync not started (Zepp credentials missing or invalid); sync_status still reads the store');
+  }
+  if (!syncService) {
+    // Status-only service so the tool still works: reuse a stub context that is never used for requests.
+    syncService = createSyncService({ ctx: { config: { ...env, regionLabel: 'n/a' }, zepp: null as any } as ServiceContext, store, config: { ...syncConfig, enabled: false } });
+  }
+  console.log('[zepp] local store ready at ' + syncConfig.dbPath);
+} catch (e: any) {
+  console.error('[zepp] local store unavailable, sync_status disabled: ' + (e?.message ?? 'error'));
+}
+const app = createApp({ env, oauth, port: PORT, ...(syncService ? { syncStatus: () => syncService!.status() } : {}) });
 async function handleNodeRequest(nodeReq: http.IncomingMessage, nodeRes: http.ServerResponse) {
   const chunks: Buffer[] = [];
   let size = 0;

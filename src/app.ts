@@ -10,6 +10,8 @@ export interface AppDeps {
   /** null disables OAuth (static bearer only). */
   oauth: OAuthProvider | null;
   port?: number;
+  /** Node server only: returns the local store/sync status for the `sync_status` tool. Omit to leave that tool out. */
+  syncStatus?: () => unknown;
 }
 
 export function createApp(deps: AppDeps): (request: Request) => Promise<Response> {
@@ -43,7 +45,7 @@ export function createApp(deps: AppDeps): (request: Request) => Promise<Response
     catch (e: any) {
       return Response.json({ error: "Worker configuration is invalid", detail: e?.message }, { status: 500 });
     }
-    const handler = createMcpHandler(() => createZeppMcpServer(services), { route: "/mcp", corsOptions: false });
+    const handler = createMcpHandler(() => createZeppMcpServer(services, deps.syncStatus ? { syncStatus: deps.syncStatus } : {}), { route: "/mcp", corsOptions: false });
     const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
     return handler(request, env, ctx);
   };

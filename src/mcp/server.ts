@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { fromError } from "../response";
+import { fromError, ok } from "../response";
 import type { Services } from "../services";
 import { parseDateRange } from "../time";
 import { MAX_SERIES_LIMIT, REVIEWED_METRIC_IDS, SERIES_METRIC_IDS } from "../zepp/events";
@@ -18,7 +18,12 @@ async function safe(services: Services, fn: () => Promise<unknown>) {
   catch (error) { return result(fromError(error, services.config.USER_TIMEZONE)); }
 }
 
-export function createZeppMcpServer(services: Services): McpServer {
+export interface ZeppMcpExtras {
+  /** Provided by the Node server only (needs the local SQLite store). When absent, `sync_status` is not registered. */
+  syncStatus?: () => unknown;
+}
+
+export function createZeppMcpServer(services: Services, extras: ZeppMcpExtras = {}): McpServer {
   const server = new McpServer({ name: "zepp-cloud-mcp", version: "0.1.0" });
 
   server.registerTool("zepp_status", {
@@ -83,5 +88,12 @@ export function createZeppMcpServer(services: Services): McpServer {
     inputSchema: z.object({ metric: z.enum(REVIEWED_METRIC_IDS), ...rangeShape }), annotations
   }, async ({ metric, start_date, end_date }) => safe(services, () => services.getRawMetric(metric, range(services, start_date, end_date))));
 
+  if (extras.syncStatus) {
+    const syncStatus = extras.syncStatus;
+    server.registerTool("sync_status", {
+      description: "Report the state of the local Zepp data store that is filled by the daily sync: last sync time and result (ok/error), row counts and date coverage per table (daily summaries, sleep, workouts, strength sets), recent runs and next scheduled run. Read-only; it does not contact Zepp or start a sync.",
+      inputSchema: z.object({}), annotations: { ...annotations, openWorldHint: false }
+    }, async () => safe(services, async () => ok(syncStatus(), services.config.USER_TIMEZONE)));
+  }
   return server;
 }
