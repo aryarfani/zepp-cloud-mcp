@@ -13,7 +13,12 @@ export type ZeppEndpointName =
   | "watchStatistic"
   | "v2Events"
   | "userEvents"
-  | "userEventsDateString";
+  | "userEventsDateString"
+  | "weightRecords"
+  | "bloodPressure";
+
+/** Largest `days` window the blood pressure endpoint accepted in live checks (14 ok, 30 rejected). */
+export const BLOOD_PRESSURE_MAX_DAYS = 14;
 
 type ArgValue = string | number | boolean | undefined;
 
@@ -88,6 +93,22 @@ export function buildZeppRequest(
         path: `/users/${validatedUserId(args.userId)}/events`,
         query: pick(args, ["eventType", "subType", "from", "to", "limit", "reverse", "userId"])
       };
+    case "weightRecords":
+      return {
+        path: `/users/${validatedUserId(args.userId)}/members/-1/weightRecords`,
+        query: pick(args, ["fromTime", "toTime", "limit", "isForward"])
+      };
+    case "bloodPressure": {
+      // Verified live: `days` must be small (1 and 14 work, 30 is rejected with HTTP 400); `toDate` must be yyyy-MM-dd.
+      const days = Number(args.days);
+      if (!Number.isInteger(days) || days < 1 || days > BLOOD_PRESSURE_MAX_DAYS) throw new ZeppError("unsupported", `Blood pressure window must be 1 to ${BLOOD_PRESSURE_MAX_DAYS} days`);
+      const toDate = String(args.toDate ?? "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(toDate)) throw new ZeppError("unsupported", "Invalid blood pressure toDate");
+      return {
+        path: "/users/me/bloodPressure",
+        query: { days: String(days), sourceArrayStr: "com.huami.midong.associated,com.huami.midong", toDate }
+      };
+    }
     case "userEventsDateString":
       return {
         path: `/users/${validatedUserId(args.userId)}/events/dateString`,

@@ -80,7 +80,8 @@ function localBoundary(date: string, timezone: string, end: boolean): { ms: numb
   return { ms: epoch, iso: `${local}${offsetText(offset)}` };
 }
 
-export function parseDateRange(startDate: string, endDate: string, timezone: string): DateRange {
+/** `maxDays` is the inclusive-day cap (31 for tools; the sync passes a larger one for single-request, sparse data such as weigh-ins). */
+export function parseDateRange(startDate: string, endDate: string, timezone: string, maxDays = 31): DateRange {
   assertTimeZone(timezone);
   const start = parseDate(startDate);
   const end = parseDate(endDate);
@@ -88,7 +89,7 @@ export function parseDateRange(startDate: string, endDate: string, timezone: str
   const endDay = Date.UTC(end.year, end.month - 1, end.day);
   if (startDay > endDay) throw new Error("start date must be on or before end date");
   const days = Math.floor((endDay - startDay) / 86_400_000) + 1;
-  if (days > 31) throw new Error("Date range cannot exceed 31 inclusive days");
+  if (days > maxDays) throw new Error(`Date range cannot exceed ${maxDays} inclusive days`);
   const from = localBoundary(startDate, timezone, false);
   const to = localBoundary(endDate, timezone, true);
   return {
@@ -109,4 +110,10 @@ export function previousIsoDate(date: string): string {
   const { year, month, day } = parseDate(date);
   const previous = new Date(Date.UTC(year, month - 1, day - 1));
   return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, "0")}-${String(previous.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function addIsoDays(date: string, days: number): string {
+  const { year, month, day } = parseDate(date);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
 }

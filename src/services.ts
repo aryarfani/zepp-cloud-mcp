@@ -4,9 +4,14 @@ import type { DateRange } from "./time";
 import { getDailySummary } from "./zepp/activity";
 import { ZeppClient } from "./zepp/client";
 import { getMetricSeries, getRawMetric, type ReviewedMetric, type SeriesMetric } from "./zepp/events";
+import { getBloodPressure, type BloodPressureReading } from "./zepp/blood-pressure";
+import { getHybridCharge, type ChargeResult } from "./zepp/charge";
+import { getEmotionEvents, type EmotionEvent } from "./zepp/emotion";
+import { listEventTypes, type EventManifest } from "./zepp/event-manifest";
 import { getHeartRate } from "./zepp/heart-rate";
 import { getRecovery } from "./zepp/recovery";
 import { getSleep } from "./zepp/sleep";
+import { getWeight, type WeightRecord } from "./zepp/weight";
 import { getTrainingStatus } from "./zepp/training";
 import { getWorkoutRoute, getWorkoutSamples, type WorkoutRouteResult, type WorkoutSampleField, type WorkoutSamplesResult } from "./zepp/workout-detail";
 import { getStrengthSets, type StrengthSetsResult } from "./zepp/strength";
@@ -31,6 +36,11 @@ export interface Services extends ServiceContext {
   getWorkoutSamples(workoutId: string, fields: readonly WorkoutSampleField[], maxPoints?: number): Promise<Envelope<WorkoutSamplesResult>>;
   getWorkoutRoute(workoutId: string, maxPoints?: number): Promise<Envelope<WorkoutRouteResult>>;
   getStrengthSets(workoutId: string): Promise<Envelope<StrengthSetsResult>>;
+  getWeight(range: DateRange): Promise<Envelope<WeightRecord[]>>;
+  getBloodPressure(range: DateRange): Promise<Envelope<BloodPressureReading[]>>;
+  getHybridCharge(range: DateRange, options?: { includeSamples?: boolean; maxPoints?: number }): Promise<Envelope<ChargeResult>>;
+  getEmotionEvents(range: DateRange): Promise<Envelope<EmotionEvent[]>>;
+  listEventTypes(days?: number): Promise<Envelope<EventManifest>>;
 }
 
 export function createServices(config: AppConfig, fetchImpl: typeof fetch = fetch): Services {
@@ -48,6 +58,11 @@ export function createServices(config: AppConfig, fetchImpl: typeof fetch = fetc
     getWorkout: workoutId => getWorkout(ctx, workoutId),
     getWorkoutSamples: (workoutId, fields, maxPoints) => getWorkoutSamples(ctx, workoutId, fields, maxPoints),
     getWorkoutRoute: (workoutId, maxPoints) => getWorkoutRoute(ctx, workoutId, maxPoints),
-    getStrengthSets: workoutId => getStrengthSets(ctx, workoutId)
+    getStrengthSets: workoutId => getStrengthSets(ctx, workoutId),
+    getWeight: range => getWeight(ctx, range),
+    getBloodPressure: range => getBloodPressure(ctx, range),
+    getHybridCharge: (range, options) => getHybridCharge(ctx, range, options),
+    getEmotionEvents: range => getEmotionEvents(ctx, range),
+    listEventTypes: days => listEventTypes(ctx, days)
   };
 }

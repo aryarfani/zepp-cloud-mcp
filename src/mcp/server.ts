@@ -88,10 +88,34 @@ export function createZeppMcpServer(services: Services, extras: ZeppMcpExtras = 
     inputSchema: z.object({ metric: z.enum(REVIEWED_METRIC_IDS), ...rangeShape }), annotations
   }, async ({ metric, start_date, end_date }) => safe(services, () => services.getRawMetric(metric, range(services, start_date, end_date))));
 
-  if (extras.syncStatus) {
-    const syncStatus = extras.syncStatus;
+  server.registerTool("get_weight", {
+    description: "Get weigh-in records (weight in kg, plus height, BMI and Zepp body-style code when reported) for an inclusive local-date range, from the Zepp weight endpoint. Only fields Zepp actually returns are included; body-composition readings (fat, water, muscle, ...) appear only if a scale reports them and are not guessed. Returns no_data when there are no weigh-ins.",
+    inputSchema: z.object(rangeShape), annotations
+  }, async ({ start_date, end_date }) => safe(services, () => services.getWeight(range(services, start_date, end_date))));
+
+  server.registerTool("get_blood_pressure", {
+    description: "Get blood pressure readings (systolic/diastolic mmHg, pulse when present) for an inclusive local-date range, from the Zepp blood pressure endpoint and event stream. Returns no_data when the account has no readings (the case for a watch without blood pressure measurement and no manual entries).",
+    inputSchema: z.object(rangeShape), annotations
+  }, async ({ start_date, end_date }) => safe(services, () => services.getBloodPressure(range(services, start_date, end_date))));
+
+  server.registerTool("get_hybrid_charge", {
+    description: "Get Hybrid Charge (the watch's body-battery-like Charge score, 0-100, with mental and physical components) for an inclusive local-date range: per-day first/last/min/max/average of the total score and average mental/physical values, plus Zepp's Charge insight events (values passed through unchanged; their meaning is not documented). Set include_samples to also get the minute-level samples, deterministically downsampled to max_points.",
+    inputSchema: z.object({ ...rangeShape, include_samples: z.boolean().default(false), max_points: z.number().int().min(2).max(2000).default(288) }), annotations
+  }, async ({ start_date, end_date, include_samples, max_points }) => safe(services, () => services.getHybridCharge(range(services, start_date, end_date), { includeSamples: include_samples, maxPoints: max_points })));
+
+  server.registerTool("get_emotion_events", {
+    description: "Get emotion and spot-stress events for an inclusive local-date range: spot stress readings (single_stress, score 0-100) and Emotion stream events when the account has them. Each event has a time, source (spot_stress or emotion) and value. Returns no_data when there are none.",
+    inputSchema: z.object(rangeShape), annotations
+  }, async ({ start_date, end_date }) => safe(services, () => services.getEmotionEvents(range(services, start_date, end_date))));
+
+  server.registerTool("list_event_types", {
+    description: "Discovery: list the Zepp event streams and data endpoints this server knows (hybrid charge, emotion, blood pressure, HRV, stress, SpO2, PAI, weight, ...) and whether each has data for this account in the last N days (default 90), with the latest event time and the tool that decodes it. Makes one small request per stream, so it takes a few seconds; results are cached for 10 minutes.",
+    inputSchema: z.object({ days: z.number().int().min(1).max(365).default(90) }), annotations
+  }, async ({ days }) => safe(services, () => services.listEventTypes(days)));
+
+  if (extras.syncStatus) {    const syncStatus = extras.syncStatus;
     server.registerTool("sync_status", {
-      description: "Report the state of the local Zepp data store that is filled by the daily sync: last sync time and result (ok/error), row counts and date coverage per table (daily summaries, sleep, workouts, strength sets), recent runs and next scheduled run. Read-only; it does not contact Zepp or start a sync.",
+      description: "Report the state of the local Zepp data store that is filled by the daily sync: last sync time and result (ok/error), row counts and date coverage per table (daily summaries, sleep, workouts, strength sets, weight, blood pressure, hybrid charge samples and insights, emotion/stress events, event stream availability), recent runs and next scheduled run. Read-only; it does not contact Zepp or start a sync.",
       inputSchema: z.object({}), annotations: { ...annotations, openWorldHint: false }
     }, async () => safe(services, async () => ok(syncStatus(), services.config.USER_TIMEZONE)));
   }
