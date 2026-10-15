@@ -128,10 +128,11 @@ describe("workouts: infinite scroll", () => {
   it("respects the type filter and drops a stale page that arrives after the filter changed", async () => {
     const h = await boot("#/workouts");
     try {
-      const select = h.doc.querySelector(".wlist-pane select.wtype") as HTMLSelectElement;
+      const btn = h.doc.querySelector(".wlist-pane button.wtype") as HTMLElement;
       const pick = async (label: string) => {
-        const opt = [...select.options].find(o => o.text.startsWith(label))!;
-        select.value = opt.value; select.dispatchEvent(new h.win.Event("change")); await wait();
+        btn.click();
+        const opt = [...h.doc.querySelectorAll(".wmenu [role=option]")].find(o => (o.querySelector(".nm")?.textContent ?? "").startsWith(label)) as HTMLElement;
+        opt.click(); await wait();
       };
       await pick("Walking");
       expect(pageFetches(h).at(-1)).toContain("type=walking");
@@ -139,7 +140,7 @@ describe("workouts: infinite scroll", () => {
       expect([...rows(h)].every(r => /Walking/.test(r.textContent ?? ""))).toBe(true);
       expect(text(h.doc.querySelector(".wlist > .wend"))).toBe("End of list");
 
-      expect(select.selectedOptions[0]!.text).toMatch(/^Walking \(\d+\)$/);
+      expect(btn.textContent).toContain("Walking");
       await pick("Outdoor running");
       expect(rows(h)).toHaveLength(25);
       const gate = h.hold();

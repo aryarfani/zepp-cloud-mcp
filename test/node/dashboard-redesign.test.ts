@@ -130,19 +130,39 @@ describe("workouts list: compact rows, sport dropdown and search", () => {
       expect(rows.find(r => /Walking/.test(text(r)))!.querySelector(".sico")!.classList.contains("f-walk")).toBe(true);
       expect(rows.find(r => /Pool swimming/.test(text(r)))!.querySelector(".sico")!.classList.contains("f-swim")).toBe(true);
       expect(h.doc.querySelector(".chips")).toBeNull();
-      const select = h.doc.querySelector(".wfilter select.wtype") as Element;
-      expect(select.getAttribute("aria-label")).toBe("Filter by sport");
-      const options = [...select.options] as Element[];
-      expect(options[0].value).toBe("");
-      expect(options[0].text).toMatch(/^All sports \(\d+\)$/);
-      expect(options.length).toBeGreaterThanOrEqual(6);
-      for (const o of options) expect(o.text).toMatch(/\(\d+\)$/);
-      expect(select.value).toBe("");
+      expect(h.doc.querySelector(".wfilter select")).toBeNull(); // the native select is gone
+      const btn = h.doc.querySelector(".wfilter button.wtype") as Element;
+      expect(btn.getAttribute("role")).toBe("combobox");
+      expect(btn.getAttribute("aria-haspopup")).toBe("listbox");
+      expect(btn.getAttribute("aria-expanded")).toBe("false");
+      expect(btn.getAttribute("aria-label")).toBe("Filter by sport");
+      expect(text(btn)).toBe("All sports");
+      expect(btn.querySelector(".sico svg")).not.toBeNull();
+      expect(btn.querySelector("svg.dd-chev")).not.toBeNull();
+      const menu = h.doc.querySelector(".wmenu") as Element;
+      expect(menu.hasAttribute("hidden")).toBe(true);
       // the dropdown sits next to the search box
-      expect(select.parentElement!.previousElementSibling!.querySelector("input[type=search]")).not.toBeNull();
+      expect(btn.parentElement!.previousElementSibling!.querySelector("input[type=search]")).not.toBeNull();
+      btn.click();
+      expect(btn.getAttribute("aria-expanded")).toBe("true");
+      expect(menu.hasAttribute("hidden")).toBe(false);
+      expect(btn.getAttribute("aria-controls")).toBe(menu.querySelector("[role=listbox]")!.id);
+      const options = [...menu.querySelectorAll("[role=option]")] as Element[];
+      expect(options.length).toBeGreaterThanOrEqual(6);
+      expect(text(options[0]!.querySelector(".nm"))).toBe("All sports");
+      expect(options[0]!.getAttribute("aria-selected")).toBe("true");
+      for (const o of options) {
+        expect(text(o.querySelector(".cnt"))).toMatch(/^\d+$/);
+        expect(o.querySelector(".sico svg")).not.toBeNull();
+        expect(o.querySelector("svg.ck")).not.toBeNull();
+      }
+      expect(options[0]!.querySelector(".sico.neutral")).not.toBeNull();
+      expect(options.find(o => /Walking/.test(text(o)))!.querySelector(".sico.f-walk")).not.toBeNull();
+      expect(menu.querySelector("input[type=search]")!.getAttribute("aria-label")).toBe("Search sports");
       // filtering by choosing an option goes through the existing type API param
-      const walking = options.find(o => /^Walking/.test(o.text))!;
-      select.value = walking.value; select.dispatchEvent(new h.win.Event("change")); await wait(150);
+      (options.find(o => /^Walking/.test(text(o)))!).click(); await wait(150);
+      expect(menu.hasAttribute("hidden")).toBe(true);
+      expect(text(btn)).toBe("Walking");
       expect(h.fetches.at(-1)).toContain("type=walking");
       expect([...h.doc.querySelectorAll(".wlist .wrow")].every(r => /Walking/.test(text(r)))).toBe(true);
       expect(h.doc.querySelector(".wlist-pane input[type=search]")!.getAttribute("aria-label")).toBe("Search workouts");
@@ -220,8 +240,10 @@ describe("workout detail: hero, tiles and the route map", () => {
       const z0 = Number(list[0]!.getAttribute("src").split("/")[3]);
       expect(z0).toBeGreaterThan(10);
       const svg = box.querySelector("svg.route")!;
-      expect(svg.querySelectorAll("circle").length).toBe(2);
+      expect(svg.querySelectorAll("circle").length).toBe(1); // start dot; the finish is a checkered flag group
+      expect(svg.querySelectorAll(".finish").length).toBe(1);
       expect(svg.querySelector("path")!.getAttribute("d")).toMatch(/^M/);
+      expect(svg.querySelectorAll("g path").length).toBeGreaterThan(0);
       expect(text(box.querySelector(".mapattr"))).toBe("\u00a9 OpenStreetMap contributors");
       expect(box.querySelector(".mapattr a")!.getAttribute("rel")).toContain("noopener");
       const zoomIn = box.querySelector('button[aria-label="Zoom in"]') as Element;
@@ -258,7 +280,7 @@ describe("workout detail: hero, tiles and the route map", () => {
   it("can be switched off (remembered in localStorage) and never requests tiles when off or offline", async () => {
     const h = await boot("#/workouts/" + encodeURIComponent(RUN));
     try {
-      const toggle = h.doc.querySelector(".maphead button") as Element;
+      const toggle = h.doc.querySelector(".mapbox .maptoggle") as Element;
       expect(toggle.textContent).toBe("Hide map");
       toggle.click();
       expect(h.win.localStorage.getItem("zepp.map")).toBe("off");

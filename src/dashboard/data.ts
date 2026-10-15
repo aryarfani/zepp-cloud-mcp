@@ -2,6 +2,8 @@
 import { existsSync, statSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { addIsoDays } from "../time";
+import { type MuscleSummary, aggregateMuscles } from "../zepp/muscles";
+import { type RouteThumb, routeThumb } from "./thumbs";
 import { sportConfidence } from "../zepp/sport-catalog";
 import { strengthExerciseName, strengthExerciseSource } from "../zepp/strength-exercises";
 
@@ -173,10 +175,46 @@ export class DashboardData {
       `SELECT workout_id, activity_type, zepp_type, started_at, started_date, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, training_load,
               (SELECT COUNT(*) FROM strength_sets s WHERE s.workout_id = w.workout_id) AS strength_sets
          FROM workouts w${clause} ORDER BY started_at DESC LIMIT ? OFFSET ?`, ...params, limit, Math.max(0, opts.offset));
+    const extras = this.rowExtras(rows);
     return {
-      available: true, timezone: this.timezone, workouts: rows.map(r => this.withConfidence(r)),
+      available: true, timezone: this.timezone, workouts: rows.map(r => ({ ...this.withConfidence(r), ...extras(String(r.workout_id), Number(r.strength_sets) > 0) })),
       total: Number(this.get(`SELECT COUNT(*) AS c FROM workouts${clause}`, ...params)?.c ?? 0),
       types: this.all("SELECT activity_type AS type, MIN(zepp_type) AS zepp_type, COUNT(*) AS n FROM workouts GROUP BY activity_type ORDER BY n DESC").map(r => this.withConfidence(r, "type"))
+    };
+  }
+
+  /**
+   * Cheap per-row extras for the list, computed for the whole page with two small queries (no upstream calls, no per-row fetch):
+   * `muscles` for strength workouts (estimated from exercise ids) and `thumb` (a normalised, downsampled route) for workouts
+   * whose analysis is already stored. Rows with neither get nothing, so their JSON is unchanged.
+   */
+  private rowExtras(rows: Array<Record<string, unknown>>): (id: string, strength: boolean) => { muscles?: MuscleSummary; thumb?: RouteThumb } {
+    const muscles = new Map<string, MuscleSummary>(), thumbs = new Map<string, RouteThumb>();
+    const strengthIds = rows.filter(r => Number(r.strength_sets) > 0).map(r => String(r.workout_id));
+    const otherIds = rows.filter(r => !(Number(r.strength_sets) > 0)).map(r => String(r.workout_id));
+    if (strengthIds.length) {
+      const marks = strengthIds.map(() => "?").join(",");
+      const byWorkout = new Map<string, number[]>();
+      for (const r of this.all(`SELECT workout_id, action_type FROM strength_sets WHERE workout_id IN (${marks}) GROUP BY workout_id, action_type`, ...strengthIds)) {
+        const list = byWorkout.get(String(r.workout_id)) ?? []; list.push(Number(r.action_type)); byWorkout.set(String(r.workout_id), list);
+      }
+      for (const [id, types] of byWorkout) { const m = aggregateMuscles(types); if (m) muscles.set(id, m); }
+    }
+    if (otherIds.length) {
+      const marks = otherIds.map(() => "?").join(",");
+      try {
+        for (const r of this.all(`SELECT workout_id, json_extract(analysis_json, '$.route.points') AS pts FROM workout_details WHERE status = 'ok' AND workout_id IN (${marks})`, ...otherIds)) {
+          if (typeof r.pts !== "string") continue;
+          let pts: unknown; try { pts = JSON.parse(r.pts); } catch { continue; }
+          const t = routeThumb(pts); if (t) thumbs.set(String(r.workout_id), t);
+        }
+      } catch { /* older database without workout_details: no thumbnails */ }
+    }
+    return (id, strength) => {
+      const out: { muscles?: MuscleSummary; thumb?: RouteThumb } = {};
+      if (strength && muscles.has(id)) out.muscles = muscles.get(id)!;
+      if (!strength && thumbs.has(id)) out.thumb = thumbs.get(id)!;
+      return out;
     };
   }
 
@@ -199,7 +237,9 @@ export class DashboardData {
         const name = strengthExerciseName(actionType);
         return { ...s, exercise: name, known: !name.startsWith("unknown_") };
       });
-    return { timezone: this.timezone, workout: this.withConfidence(w), sets };
+    // Estimated from the exercise ids of the sets (null when no id has muscle data, e.g. unknown_0 / unassigned only).
+    const muscles = aggregateMuscles(sets.map(s => Number((s as Record<string, unknown>).action_type)));
+    return { timezone: this.timezone, workout: this.withConfidence(w), sets, muscles };
   }
 
   /** Stored workout analysis (series, splits, zones, route), or null when none was stored yet. */

@@ -68,10 +68,27 @@ describe("workout detail for running/walking/cycling", () => {
       expect(h.errors).toEqual([]);
       const wa = h.doc.querySelector(".wa")!;
       const labels = [...wa.querySelectorAll(".card .label")].map(text);
-      expect(labels).toEqual(["Pace", "Cadence", "Elevation", "Training"]);
-      expect(text(wa.querySelector(".card"))).toContain("7:49"); // 0.4688 s/m
+      expect(labels).toEqual(["Elevation", "Training"]); // pace and cadence moved into the stats card under the map
+      // the route map card is the first card, full width, followed by the stats card
+      expect(wa.firstElementChild!.children[0]!.classList.contains("mapcard")).toBe(true);
+      expect(wa.firstElementChild!.children[1]!.classList.contains("rstats")).toBe(true);
+      const stats = wa.querySelector(".rstats")!;
+      expect(text(stats.querySelector(".big"))).toMatch(/^\d+\.\d\d ?km$/);
+      const sl = [...stats.querySelectorAll(".it .l")].map(text);
+      expect(sl).toEqual(expect.arrayContaining(["Workout time", "Avg pace", "Avg heart rate", "Calories", "Avg cadence"]));
+      expect(text(stats)).toContain("7:49"); // 0.4688 s/m
+      expect(text(wa.querySelector(".mappill"))).toBe("Outdoor running");
+      expect(text(wa.querySelector(".maplegend"))).toContain("Slow to Fast");
+      expect(wa.querySelectorAll(".mapbox .maptoggle").length).toBe(1);
+      expect(wa.querySelectorAll("svg.route .finish").length).toBe(1);
+      // pace colouring: several colour bins, orange (slow) to green (fast)
+      const strokes = new Set([...wa.querySelectorAll("svg.route g path")].filter(p => p.getAttribute("d")).map(p => p.getAttribute("stroke")));
+      expect(strokes.size).toBeGreaterThan(1);
+      // the header and tiles above are replaced by the map and stats cards
+      expect(h.doc.querySelector(".wdetail .hero")!.classList.contains("hidden")).toBe(true);
       expect(wa.querySelectorAll("svg.chart").length).toBe(3); // pace, heart rate, elevation
-      expect([...wa.querySelectorAll(".panel h2")].map(text)).toEqual(expect.arrayContaining(["Heart rate (bpm)", "Elevation (m)", "Heart-rate zones", "Splits", "Route"]));
+      expect([...wa.querySelectorAll(".panel h2")].map(text)).toEqual(expect.arrayContaining(["Heart rate (bpm)", "Elevation (m)", "Heart-rate zones", "Splits"]));
+      expect([...wa.querySelectorAll(".panel h2")].map(text)).not.toContain("Route");
       expect(wa.querySelectorAll(".zrow").length).toBe(5);
       const rows = wa.querySelectorAll("tbody tr");
       expect(rows.length).toBe(4);

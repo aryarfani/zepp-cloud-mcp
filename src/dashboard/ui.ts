@@ -78,7 +78,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 a.badge:hover{border-color:var(--teal);color:var(--text)}
 code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .unknown{color:var(--warn)}
-.hidden{display:none}
+.hidden{display:none!important}
 .err{color:var(--bad)}
 .sk{border-radius:10px;background:linear-gradient(90deg,var(--panel) 0%,var(--panel2) 40%,var(--panel) 80%);background-size:220% 100%;animation:shimmer 1.4s linear infinite}
 @keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
@@ -92,10 +92,25 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .wsearch{width:100%;padding:8px 12px 8px 34px;background:var(--panel2);border-radius:11px}
 .wsearch-wrap{position:relative}
 .wsearch-wrap svg{position:absolute;left:11px;top:50%;margin-top:-8px;width:16px;height:16px;color:var(--faint);pointer-events:none}
-.wtype-wrap{position:relative;flex:none;width:132px}
-.wtype{width:100%;appearance:none;-webkit-appearance:none;padding:8px 28px 8px 11px;background:var(--panel2);border-radius:11px;color:var(--text);font:inherit;font-size:.84rem;text-overflow:ellipsis;cursor:pointer}
-.wtype option{background:#12161d;color:var(--text)}
-.wtype-wrap svg{position:absolute;right:9px;top:50%;margin-top:-7px;width:14px;height:14px;color:var(--faint);pointer-events:none;transform:rotate(-90deg)}
+.wtype-wrap{position:relative;flex:none;width:178px}
+.wtype{display:flex;align-items:center;gap:8px;width:100%;height:100%;padding:5px 9px 5px 6px;background:var(--panel2);border-radius:11px;color:var(--text);font:inherit;font-size:.84rem;cursor:pointer;text-align:left}
+.wdd-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wtype .dd-chev,.wopt .ck{flex:none;width:14px;height:14px}
+.wtype .dd-chev{color:var(--faint);transform:rotate(-90deg);transition:transform .15s}
+.wtype[aria-expanded=true] .dd-chev{transform:rotate(90deg)}
+.wtype .sico,.wopt .sico{width:26px;height:26px;border-radius:50%}
+.wtype .sico svg,.wopt .sico svg{width:15px;height:15px}
+.sico.neutral{--c:#9aa4b8}
+.wmenu{position:absolute;right:0;top:calc(100% + 6px);width:272px;max-width:calc(100vw - 28px);z-index:40;background:#12161d;border:1px solid var(--line2);border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.55);padding:8px}
+.wmenu[hidden]{display:none}
+.wdd-search{display:block;width:100%;margin:0 0 6px;padding:8px 11px;border-radius:9px;font-size:.84rem}
+.wdd-list{max-height:min(340px,52vh);overflow:auto}
+.wopt{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px;cursor:pointer;font-size:.86rem}
+.wopt.act,.wopt:hover{background:rgba(45,212,191,.13)}
+.wopt .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wopt .cnt{font-size:.72rem;color:var(--muted);background:rgba(255,255,255,.07);padding:1px 8px;border-radius:999px;font-variant-numeric:tabular-nums}
+.wopt .ck{color:var(--teal);visibility:hidden}.wopt.on .ck{visibility:visible}.wopt.on .nm{font-weight:600}
+.wdd-none{padding:10px 8px;color:var(--faint);font-size:.82rem}
 .wmeta{padding:0 4px 6px 2px;font-size:.78rem}
 .wlist{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow-y:auto;position:relative;padding:0 4px 8px 0;overscroll-behavior:contain;scrollbar-width:thin}
 .wdetail{min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:4px;scrollbar-width:thin}
@@ -114,6 +129,9 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .wrow .t{font-weight:580;font-size:.88rem;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wrow .sub{font-size:.74rem;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wrow .r{text-align:right;color:var(--muted);font-size:.78rem;white-space:nowrap;line-height:1.3;font-variant-numeric:tabular-nums}
+.wrow .r.lead{display:flex;align-items:center;justify-content:flex-end;gap:9px}
+.wrow .r .rt{text-align:right}
+.rthumb{flex:none;width:48px;height:34px;border-radius:8px;background:#0a0d12;border:1px solid var(--line)}
 .wrow .r .pv{color:var(--text);font-weight:650;font-size:.9rem}
 .wrow .r .sv{font-size:.72rem;color:var(--faint)}
 .hero{display:flex;align-items:center;gap:14px;padding:16px 18px;margin-bottom:12px;border-radius:var(--r);border:1px solid var(--line2);background:radial-gradient(520px 160px at 100% 0,rgba(45,212,191,.18),transparent 70%),radial-gradient(420px 160px at 0 100%,rgba(167,139,250,.14),transparent 70%),var(--panel);box-shadow:var(--shadow)}
@@ -137,10 +155,47 @@ svg.route{position:absolute;inset:0;width:100%;height:100%;display:block;pointer
 .mapctl button{width:30px;height:30px;padding:0;display:grid;place-items:center;font-size:1.05rem;line-height:1;background:rgba(18,22,30,.88);backdrop-filter:blur(4px)}
 .mapattr{position:absolute;right:0;bottom:0;z-index:2;font-size:.68rem;padding:2px 7px;background:rgba(10,12,17,.78);color:var(--muted);border-top-left-radius:8px}
 .mapattr a{color:var(--text);text-decoration:underline}
-.mapnote{position:absolute;left:10px;bottom:8px;z-index:2;font-size:.72rem;color:var(--muted);background:rgba(10,12,17,.78);padding:2px 8px;border-radius:8px}
-.maphead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
-.maphead h2{margin:0}
-.maphead button{padding:3px 11px;font-size:.78rem;border-radius:999px}
+.mapnote{position:absolute;left:10px;top:46px;z-index:2;font-size:.72rem;color:var(--muted);background:rgba(10,12,17,.78);padding:2px 8px;border-radius:8px}
+.mappill{position:absolute;left:10px;top:10px;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:5px 12px 5px 9px;border-radius:999px;font-size:.8rem;font-weight:600;color:var(--text);background:rgba(18,22,30,.9);border:1px solid var(--line2);backdrop-filter:blur(4px);pointer-events:none}
+.mappill svg{width:15px;height:15px;color:var(--teal)}
+.maptoggle{position:absolute;top:10px;right:50px;z-index:2;padding:4px 12px;font-size:.78rem;border-radius:999px;background:rgba(18,22,30,.9);backdrop-filter:blur(4px)}
+.maplegend{position:absolute;left:10px;bottom:10px;z-index:2;padding:6px 10px 7px;border-radius:10px;background:rgba(10,12,17,.82);border:1px solid var(--line);font-size:.68rem;color:var(--muted);min-width:132px;pointer-events:none}
+.maplegend .bar{height:6px;border-radius:3px;margin:4px 0 3px;background:linear-gradient(90deg,#f97316,#eab308,#22c55e)}
+.maplegend .ends{display:flex;justify-content:space-between}
+.bm{display:block;width:100%;height:auto}
+.bm .m-n{fill:#566072;stroke:#05070b;stroke-width:.6}
+.bm .m-p{fill:#ef4444;stroke:#05070b;stroke-width:.6;filter:drop-shadow(0 0 2px rgba(239,68,68,.45))}
+.bm .m-s{fill:#f59e0b;stroke:#05070b;stroke-width:.6}
+.bm .m-b{fill:#384050;stroke:#05070b;stroke-width:.6}
+.bm-sm{width:auto;height:34px;flex:none}
+.bm-sm .m-n{stroke-width:1}
+.bm-sm .m-p,.bm-sm .m-s,.bm-sm .m-b{stroke-width:1}
+.bm-sm .m-p{filter:none}
+.bm-card .bm-body{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.bm-fig{flex:0 1 330px;min-width:220px}
+.bm-fig .bm{max-height:360px}
+.bm-lbl{display:flex;justify-content:space-around;margin-top:4px;font-size:.72rem;color:var(--faint);letter-spacing:.06em;text-transform:uppercase}
+.bm-legend{flex:1 1 220px;min-width:200px;display:flex;flex-direction:column;gap:12px}
+.bm-key{display:flex;gap:10px;align-items:flex-start}
+.bm-key .sub{font-size:.8rem;margin-top:2px}
+.bm-key .dot{flex:none;width:12px;height:12px;border-radius:50%;margin-top:4px}
+.bm-key .dot.p{background:#ef4444}.bm-key .dot.s{background:#f59e0b}.bm-key .dot.n{background:#566072}
+.bm-note{margin:4px 0 0;padding:10px 12px;font-size:.78rem;line-height:1.4;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.mapcard{padding:10px 10px 8px}
+.mapcard .mapbox{height:clamp(300px,46vh,460px)}
+.mapcard .sub{margin:8px 4px 0;font-size:.72rem}
+.rstats{margin:12px 0 14px}
+.rstats .big{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.rstats .big .v{font-size:2.3rem;font-weight:700;letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums}
+.rstats .big .u{color:var(--muted);font-size:1rem}
+.rstats .when{margin:2px 0 12px}
+.rstats .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.rstats .it{padding:9px 11px;border-radius:11px;background:var(--panel2);border:1px solid var(--line)}
+.rstats .it .l{display:flex;align-items:center;gap:6px;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.rstats .it .l svg{width:13px;height:13px;color:var(--teal)}
+.rstats .it .v{font-size:1.2rem;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}
+.rstats .it .v small{font-size:.74rem;font-weight:500;color:var(--muted);margin-left:3px}
+.rstats .it .x{font-size:.72rem;color:var(--faint);margin-top:1px}
 .login{max-width:23rem;margin:14vh auto 0;padding:0 14px}
 .login .panel{padding:24px}.login h1{font-size:1.4rem;margin-bottom:4px}.login input{width:100%;margin:6px 0 14px}.login button{width:100%;background:var(--grad);border-color:transparent;color:#071210;font-weight:650;padding:9px}
 @media (min-width:821px){
@@ -226,7 +281,9 @@ export const DASHBOARD_JS = String.raw`(function () {
     bike: "M6 20a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM18 20a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM6 16.5l4-7.5h5l3 7.5M10 9l2 7.5M9 6h3",
     swim: "M3 18c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0 3-1 4.5 0M3 13.5c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0 3-1 4.5 0M16 5.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM6 11l4-3.5 3 2 3 2",
     dumbbell: "M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11",
-    chevron: "M15 18l-6-6 6-6"
+    chevron: "M15 18l-6-6 6-6",
+    check: "M5 12.5l4.5 4.5L19 7.5",
+    grid: "M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z"
   };
   function ico(name, cls) {
     var svg = s("svg", { "class": "ico" + (cls ? " " + cls : ""), viewBox: "0 0 24 24", "aria-hidden": "true" });
@@ -651,13 +708,24 @@ export const DASHBOARD_JS = String.raw`(function () {
     var right = hasDist ? [h("div", { class: "pv", text: fmtKm(w.distance_m) }), h("div", { class: "sv", text: fmtDur(w.duration_s) })]
       : hasSets ? [h("div", { class: "pv", text: w.strength_sets + (w.strength_sets === 1 ? " set" : " sets") }), h("div", { class: "sv", text: fmtDur(w.duration_s) })]
       : [h("div", { class: "pv", text: fmtDur(w.duration_s) })];
+    // small picture left of the bold value: body map for strength with muscle data, route shape for GPS workouts, else none
+    var lead = hasSets && hasMuscles(w.muscles) ? bodyMap(w.muscles, "sm") : (!hasSets && w.thumb && w.thumb.pts && w.thumb.pts.length > 1 ? routeThumbEl(w.thumb) : null);
     return h("a", { class: "wrow" + (w.workout_id === selId ? " sel" : ""), href: "#/workouts/" + encodeURIComponent(w.workout_id), onclick: function () { if (state.wkUi) state.wkUi.skipScroll = true; } }, [
       sportChip(w.activity_type),
       h("div", { class: "wmain" }, [
         h("div", { class: "t" }, [typeName(w.activity_type), " ", typeBadge(w, true)]),
         h("div", { class: "sub", text: shortDate(w.started_date) + " \u00b7 " + localTime(w.started_at) })
       ]),
-      h("div", { class: "r" }, right)
+      lead ? h("div", { class: "r lead" }, [lead, h("div", { class: "rt" }, right)]) : h("div", { class: "r" }, right)
+    ]);
+  }
+  /** A GPS route as a tiny dark SVG polyline. The server sends only the normalised shape (no coordinates, no tiles). */
+  function routeThumbEl(t) {
+    var pad = 7, pts = t.pts.map(function (p) { return (p[0] + pad).toFixed(1) + "," + (p[1] + pad).toFixed(1); }), a = t.pts[0], z = t.pts[t.pts.length - 1];
+    return s("svg", { "class": "rthumb", viewBox: "0 0 " + (t.w + pad * 2) + " " + (t.h + pad * 2), role: "img", "aria-label": "Route shape", preserveAspectRatio: "xMidYMid meet" }, [
+      s("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--teal)", "stroke-width": "4", "stroke-linejoin": "round", "stroke-linecap": "round" }),
+      s("circle", { cx: a[0] + pad, cy: a[1] + pad, r: 4.2, fill: "var(--good)" }),
+      s("circle", { cx: z[0] + pad, cy: z[1] + pad, r: 4.2, fill: "var(--bad)" })
     ]);
   }
   function renderDetail(pane, id, token) {
@@ -667,18 +735,22 @@ export const DASHBOARD_JS = String.raw`(function () {
       clear(pane);
       var w = r.workout;
       pane.appendChild(h("a", { class: "back", href: "#/workouts" }, "< All workouts"));
-      pane.appendChild(h("div", { class: "hero" }, [sportChip(w.activity_type, true), h("div", { class: "htxt" }, [
+      var heroEl = h("div", { class: "hero" }, [sportChip(w.activity_type, true), h("div", { class: "htxt" }, [
         h("h2", null, [typeName(w.activity_type), typeBadge(w, true)]),
         h("div", { class: "sub", text: shortDate(w.started_date) + " " + String(w.started_date || "").slice(0, 4) + " \u00b7 " + localTime(w.started_at) + " - " + localTime(w.ended_at) })
-      ])]));
+      ])]);
+      pane.appendChild(heroEl);
       var tiles = [];
       if (isNum(w.distance_m) && w.distance_m > 0) tiles.push(card("Distance", (w.distance_m / 1000).toFixed(2), "km", ""));
       tiles.push(card("Duration", fmtDur(w.duration_s), "", ""));
       tiles.push(card("Heart rate", fmtInt(w.avg_hr_bpm), "bpm avg", "max " + fmtInt(w.max_hr_bpm)));
       tiles.push(card("Energy", fmtInt(w.calories_kcal), "kcal", isNum(w.training_load) ? "load " + fmtInt(w.training_load) : ""));
-      pane.appendChild(h("div", { class: "cards stats" }, tiles));
+      var tilesEl = h("div", { class: "cards stats" }, tiles);
       var strengthWorkout = w.zepp_type === 52 || /strength/.test(String(w.activity_type));
-      if (!strengthWorkout) pane.appendChild(renderAnalysis(w, id, token));
+      // "Muscles used" (estimated from the exercise ids) sits right under the header; it only exists when some set has muscle data
+      if (strengthWorkout && hasMuscles(r.muscles)) pane.appendChild(musclesCard(r.muscles));
+      pane.appendChild(tilesEl);
+      if (!strengthWorkout) pane.appendChild(renderAnalysis(w, id, token, [heroEl, tilesEl]));
       if (r.sets && r.sets.length) {
         var volume = 0; r.sets.forEach(function (x) { if (isNum(x.weight_kg) && x.weight_kg > 0 && isNum(x.reps)) volume += x.weight_kg * x.reps; });
         pane.appendChild(panel("Sets: " + r.sets.length + ", volume " + fmtInt(volume) + " kg", table(["#", "Exercise", "Reps", "Weight", "Time", "Avg HR"], r.sets.map(function (x) {
@@ -688,6 +760,88 @@ export const DASHBOARD_JS = String.raw`(function () {
         pane.appendChild(panel("", empty("No strength sets stored for this workout")));
       }
     }).catch(function (e) { if (token === navToken) { clear(pane); pane.appendChild(h("div", { class: "empty err", text: "Could not load: " + e.message })); } });
+  }
+  // ---- body map: front and back silhouettes with muscle regions (inline SVG, no external assets) ---------------------------------
+  // Shapes are drawn for the left half of each figure (x < 50) and mirrored for the right half. The colouring is an estimate derived
+  // from the exercise ids of a workout (Zepp/Gadgetbridge catalogue), not something the watch measured.
+  var BM_LABEL = { abs: "Abs", front_delts: "Front delts", chest: "Chest", obliques: "Obliques", biceps: "Biceps", forearms: "Forearms", quads: "Quads", calves: "Calves", lats: "Lats", triceps: "Triceps", glutes: "Glutes", hamstrings: "Hamstrings", shins: "Shins", hip_flexors: "Hip flexors", upper_back: "Upper back", lower_back: "Lower back", rear_delts: "Rear delts", neck: "Neck", inner_thighs: "Inner thighs", outer_hips: "Outer hips", lower_abs: "Lower abs" };
+  var BM_FRONT = [
+    ["neck", "M45 27L50 27L50 36L42 34C43 31 44 29 45 27Z"],
+    ["front_delts", "M42 35C36 35 30 37 26 42C23 47 24 53 26 57L35 56C35 48 38 40 42 35Z"],
+    ["chest", "M43 38L50 38L50 62L40 63C35 61 34 54 36 48C37 43 40 40 43 38Z"],
+    ["biceps", "M25.5 59L35 58C35 66 34 76 33 84L26.5 84C25.5 76 25 67 25.5 59Z"],
+    ["forearms", "M26.5 87L33.5 87C33.5 97 32 108 30 119L23.5 119C23.5 108 25 97 26.5 87Z"],
+    ["obliques", "M37 65L43 65L43.5 104L38.5 104C36 92 35 78 37 65Z"],
+    ["abs", "M44.5 64.5H49.3V73.5H44.5ZM44.5 75H49.3V84H44.5ZM44.5 85.5H49.3V94.5H44.5Z"],
+    ["lower_abs", "M44.5 96H49.3V106H44.5Z"],
+    ["outer_hips", "M32 106L37.5 106L37.5 125L31.5 124C31 118 31 111 32 106Z"],
+    ["hip_flexors", "M39 108L48.5 108L48.5 119L40 121C38.5 116 38.5 112 39 108Z"],
+    ["quads", "M32.5 127L45 123L45 150C44 159 43 166 42 173L36 173C34 160 32.5 142 32.5 127Z"],
+    ["inner_thighs", "M46 122L49.5 118L49.5 148L46.5 162L46 150Z"],
+    ["shins", "M36 183L43 183C43 197 42 209 41 217L38 217C37 209 36 197 36 183Z"]
+  ];
+  var BM_BACK = [
+    ["neck", "M45 27L50 27L50 37L42 34C43 31 44 29 45 27Z"],
+    ["upper_back", "M43 37L50 37L50 70L40 63C36 56 34 47 36 42C38 39 40 38 43 37Z"],
+    ["rear_delts", "M36 38C31 39 27 42 25.5 47C24 52 25 56 26 58L35 57C36 51 37 44 36 38Z"],
+    ["triceps", "M25.5 60L35 59C35 67 34 76 33 84L26.5 84C25.5 76 25 68 25.5 60Z"],
+    ["forearms", "M26.5 87L33.5 87C33.5 97 32 108 30 119L23.5 119C23.5 108 25 97 26.5 87Z"],
+    ["lats", "M36.5 60L42 66L50 74L50 92L40 96C37 86 35 72 36.5 60Z"],
+    ["lower_back", "M41 98L50 94L50 109L41 109Z"],
+    ["glutes", "M34 110L50 110L50 129C44 131 37 129 34 121C33 117 33 113 34 110Z"],
+    ["hamstrings", "M34 132L49.5 132L49 152C48 160 45 167 43 173L37 173C35 160 34 144 34 132Z"],
+    ["calves", "M36 182L44 182C45 193 44 205 42 217L38 217C36 205 35 193 36 182Z"]
+  ];
+  // body parts that carry no muscle data (head, hands, knees, feet); drawn in a darker grey
+  var BM_BASE = ["M50 5C44 5 40.5 9.5 40.5 15.5C40.5 22 44 26 50 26C56 26 59.5 22 59.5 15.5C59.5 9.5 56 5 50 5Z", "M24 121L30 121L29 130C28 133 25.5 133 24.5 130Z", "M35.5 175L43 175L42.5 181L36 181Z", "M36.5 219L41.5 219L44 226L35 226Z"];
+  var BM_FIG_W = 100, BM_FIG_GAP = 14;
+  function bmFigure(shapes, ctx) {
+    var half = function (mirror) {
+      var g = s("g", mirror ? { transform: "translate(100 0) scale(-1 1)" } : null);
+      shapes.forEach(function (sh) {
+        var cls = ctx.p[sh[0]] ? "m-p" : ctx.s[sh[0]] ? "m-s" : "m-n";
+        var el = s("path", { d: sh[1], "class": cls });
+        if (ctx.titles && !mirror) el.appendChild(s("title", { text: BM_LABEL[sh[0]] + (cls === "m-p" ? " (primary)" : cls === "m-s" ? " (secondary)" : "") }));
+        g.appendChild(el);
+      });
+      return g;
+    };
+    var fig = s("g", null);
+    BM_BASE.forEach(function (d, i) { fig.appendChild(s("path", { d: d, "class": "m-b" })); });
+    fig.appendChild(half(false)); fig.appendChild(half(true));
+    // the head and the hands are only drawn once on the left: mirror the base parts too
+    var mb = s("g", { transform: "translate(100 0) scale(-1 1)" });
+    BM_BASE.forEach(function (d) { mb.appendChild(s("path", { d: d, "class": "m-b" })); });
+    fig.appendChild(mb);
+    return fig;
+  }
+  /** mus = { p: [muscle ids], s: [muscle ids] } (primary / secondary). size: "lg" (detail card) or "sm" (list row). */
+  function bodyMap(mus, size) {
+    var ctx = { p: {}, s: {}, titles: size !== "sm" };
+    (mus.p || []).forEach(function (m) { ctx.p[m] = true; });
+    (mus.s || []).forEach(function (m) { if (!ctx.p[m]) ctx.s[m] = true; });
+    var W = BM_FIG_W * 2 + BM_FIG_GAP;
+    var svg = s("svg", { "class": "bm bm-" + (size || "lg"), viewBox: "20 3 " + (W - 40) + " 226", role: "img", preserveAspectRatio: "xMidYMid meet" });
+    var back = s("g", { transform: "translate(" + (BM_FIG_W + BM_FIG_GAP) + " 0)" });
+    back.appendChild(bmFigure(BM_BACK, ctx));
+    svg.appendChild(bmFigure(BM_FRONT, ctx)); svg.appendChild(back);
+    var names = function (list) { return (list || []).map(function (m) { return BM_LABEL[m] || m; }).join(", "); };
+    svg.setAttribute("aria-label", "Muscles used, front and back. Primary: " + (names(mus.p) || "none") + ". Secondary: " + (names(mus.s) || "none") + ". Estimated from exercise ids.");
+    return svg;
+  }
+  function hasMuscles(m) { return !!(m && ((m.p && m.p.length) || (m.s && m.s.length))); }
+  function musclesCard(mus) {
+    var names = function (list) { return (list || []).map(function (m) { return BM_LABEL[m] || m; }).join(", "); };
+    var legend = h("div", { "class": "bm-legend" }, [
+      h("div", { "class": "bm-key" }, [h("span", { "class": "dot p" }), h("div", null, [h("b", { text: "Primary muscles" }), h("div", { "class": "sub", text: names(mus.p) || "None" })])]),
+      h("div", { "class": "bm-key" }, [h("span", { "class": "dot s" }), h("div", null, [h("b", { text: "Secondary muscles" }), h("div", { "class": "sub", text: names(mus.s) || "None" })])]),
+      h("div", { "class": "bm-key" }, [h("span", { "class": "dot n" }), h("div", null, [h("b", { text: "Not targeted" })])]),
+      h("p", { "class": "bm-note", text: "Estimate from the exercise ids (Zepp/Gadgetbridge exercise catalogue). The watch does not measure which muscles you used." })
+    ]);
+    return h("section", { "class": "panel bm-card" }, [
+      h("h2", { text: "Muscles used" }),
+      h("div", { "class": "bm-body" }, [h("div", { "class": "bm-fig" }, [bodyMap(mus, "lg"), h("div", { "class": "bm-lbl" }, [h("span", { text: "Front" }), h("span", { text: "Back" })])]), legend])
+    ]);
   }
   // ---- running / walking / cycling detail (pace, heart rate, elevation, splits, route) ------------------------------------------------
   function pad2(n) { return (n < 10 ? "0" : "") + n; }
@@ -711,16 +865,16 @@ export const DASHBOARD_JS = String.raw`(function () {
     not_synced: "Detail for this workout is not synced yet. The next daily sync will fetch it.",
     no_credentials: "Detail is not available because the server has no Zepp connection configured."
   };
-  function analysisCards(w, sm) {
+  function analysisCards(w, sm, inStats) {
     var cards = [], speed = isSpeedSport(w.activity_type);
-    if (!/swim/.test(String(w.activity_type || "")) && (isNum(sm.avg_pace_s_km) || isNum(sm.best_pace_s_km))) {
+    if (!inStats && !/swim/.test(String(w.activity_type || "")) && (isNum(sm.avg_pace_s_km) || isNum(sm.best_pace_s_km))) {
       if (speed) {
         cards.push(card("Speed", isNum(sm.avg_pace_s_km) ? fmt1(3600 / sm.avg_pace_s_km) : "-", "km/h avg", isNum(sm.best_pace_s_km) ? "best " + fmt1(3600 / sm.best_pace_s_km) + " km/h" : ""));
       } else {
         cards.push(card("Pace", fmtPace(sm.avg_pace_s_km), "/km avg", isNum(sm.best_pace_s_km) ? "best " + fmtPace(sm.best_pace_s_km) + " /km" : ""));
       }
     }
-    if (isNum(sm.avg_cadence_spm)) {
+    if (!inStats && isNum(sm.avg_cadence_spm)) {
       var cs = [];
       if (isNum(sm.max_cadence_spm)) cs.push("max " + fmtInt(sm.max_cadence_spm));
       if (isNum(sm.steps)) cs.push(fmtInt(sm.steps) + " steps");
@@ -795,16 +949,65 @@ export const DASHBOARD_JS = String.raw`(function () {
     var r = Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI / 180;
     return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * mapWorld(z);
   }
-  function routePanel(route) {
+  var PACE_RAMP = [[249, 115, 22], [234, 179, 8], [34, 197, 94]]; // slow (orange) -> fast (green)
+  var PACE_BINS = 12;
+  function rampColor(t) {
+    t = Math.max(0, Math.min(1, t));
+    var k = t * (PACE_RAMP.length - 1), i = Math.min(PACE_RAMP.length - 2, Math.floor(k)), f = k - i, a = PACE_RAMP[i], c = PACE_RAMP[i + 1];
+    return "rgb(" + Math.round(a[0] + (c[0] - a[0]) * f) + "," + Math.round(a[1] + (c[1] - a[1]) * f) + "," + Math.round(a[2] + (c[2] - a[2]) * f) + ")";
+  }
+  function routeMeters(a, b) {
+    var R = 6371000, r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r;
+    var x = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
+  }
+  /**
+   * Speed class (0 = slowest .. 1 = fastest) for every route segment, from the stored pace series (pace is seconds per km, lower is faster).
+   * A route point is matched to the series by its share of the route length, because the route and the series are sampled separately.
+   * Returns null when there is no usable pace series (swims, no GPS pace), so nothing is invented.
+   */
+  function routeSegmentClasses(route, se, speedSport) {
+    var pts = route.points, n = pts.length;
+    if (!se || !se.pace_s_km || !se.dist_m || n < 2) return null;
+    var idx = [], paces = [], i;
+    for (i = 0; i < se.pace_s_km.length; i++) if (isNum(se.pace_s_km[i]) && se.pace_s_km[i] > 0 && isNum(se.dist_m[i])) { idx.push(i); paces.push(se.pace_s_km[i]); }
+    if (paces.length < 3) return null;
+    var cum = [0]; for (i = 1; i < n; i++) cum.push(cum[i - 1] + routeMeters(pts[i - 1], pts[i]));
+    var total = cum[n - 1], endDist = se.dist_m[idx[idx.length - 1]];
+    if (!(total > 0) || !isNum(endDist) || endDist <= 0) return null;
+    var sorted = paces.slice().sort(function (x, y) { return x - y; });
+    var lo = sorted[Math.floor(sorted.length * 0.1)], hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+    if (!(hi > lo)) return null;
+    var out = [], j = 0;
+    for (i = 0; i < n - 1; i++) {
+      var d = ((cum[i] + cum[i + 1]) / 2) / total * endDist;
+      while (j < idx.length - 1 && se.dist_m[idx[j + 1]] <= d) j++;
+      var pace = paces[Math.min(j, paces.length - 1)];
+      out.push(Math.max(0, Math.min(1, (hi - pace) / (hi - lo)))); // faster pace (smaller number) -> closer to 1
+    }
+    return out;
+  }
+  function routePanel(route, opts) {
     if (!route || !route.points || route.points.length < 2) return null;
-    var pts = route.points, b = route.bbox;
+    opts = opts || {};
+    var pts = route.points, b = route.bbox, classes = opts.classes && opts.classes.length === pts.length - 1 ? opts.classes : null;
     var box = h("div", { "class": "mapbox", role: "group", "aria-label": "Route map", tabindex: "0" });
     var tiles = h("div", { "class": "maptiles" });
     var casing = s("path", { fill: "none", stroke: "#05070b", "stroke-opacity": "0.7", "stroke-width": "6.5", "stroke-linejoin": "round", "stroke-linecap": "round" });
-    var line = s("path", { fill: "none", stroke: "var(--teal)", "stroke-width": "3.5", "stroke-linejoin": "round", "stroke-linecap": "round" });
+    var line = s("g", { fill: "none", "stroke-width": "3.6", "stroke-linejoin": "round", "stroke-linecap": "round" });
+    var binPaths = [];
+    for (var bi = 0; bi < (classes ? PACE_BINS : 1); bi++) {
+      var bp = s("path", { fill: "none", stroke: classes ? rampColor((bi + 0.5) / PACE_BINS) : "var(--teal)" });
+      binPaths.push(bp); line.appendChild(bp);
+    }
+    var binOf = classes ? classes.map(function (c) { return Math.min(PACE_BINS - 1, Math.floor(c * PACE_BINS)); }) : null;
     var startDot = s("circle", { r: 6.5, fill: "var(--good)", stroke: "#05070b", "stroke-width": "2" }, s("title", { text: "Start" }));
-    var endDot = s("circle", { r: 6.5, fill: "var(--bad)", stroke: "#05070b", "stroke-width": "2" }, s("title", { text: "End" }));
-    var svg = s("svg", { "class": "route", role: "img", "aria-label": "Route track", preserveAspectRatio: "none" }, [casing, line, startDot, endDot]);
+    var endDot = s("g", { "class": "finish" }, [
+      s("title", { text: "Finish" }),
+      s("rect", { x: -7.5, y: -7.5, width: 15, height: 15, rx: 2.5, fill: "#f5f7fa", stroke: "var(--bad)", "stroke-width": "2" }),
+      s("rect", { x: -7.5, y: -7.5, width: 7.5, height: 7.5, fill: "#11151c" }), s("rect", { x: 0, y: 0, width: 7.5, height: 7.5, fill: "#11151c" })
+    ]);
+    var svg = s("svg", { "class": "route", role: "img", "aria-label": classes ? "Route track coloured by pace, slow to fast" : "Route track", preserveAspectRatio: "none" }, [casing, line, startDot, endDot]);
     var note = h("div", { "class": "mapnote hidden" });
     var attr = h("div", { "class": "mapattr" }, ["\u00a9 ", h("a", { href: "https://www.openstreetmap.org/copyright", target: "_blank", rel: "noopener noreferrer", text: "OpenStreetMap" }), " contributors"]);
     var m = { z: 3, cx: 0, cy: 0, W: 600, H: 320, tiles: mapEnabled(), loaded: 0, errors: 0, sized: false, cache: {}, raf: 0 };
@@ -834,10 +1037,18 @@ export const DASHBOARD_JS = String.raw`(function () {
       var z = m.z, x0 = m.cx - m.W / 2, y0 = m.cy - m.H / 2, n = Math.pow(2, z);
       svg.setAttribute("viewBox", "0 0 " + m.W + " " + m.H);
       var d = pts.map(function (p, i) { return (i ? "L" : "M") + (mapX(p[1], z) - x0).toFixed(1) + " " + (mapY(p[0], z) - y0).toFixed(1); }).join(" ");
-      casing.setAttribute("d", d); line.setAttribute("d", d);
+      casing.setAttribute("d", d);
+      if (binOf) {
+        var ds = binPaths.map(function () { return ""; });
+        for (var k = 0; k < binOf.length; k++) {
+          var x1 = (mapX(pts[k][1], z) - x0).toFixed(1), y1 = (mapY(pts[k][0], z) - y0).toFixed(1), x2 = (mapX(pts[k + 1][1], z) - x0).toFixed(1), y2 = (mapY(pts[k + 1][0], z) - y0).toFixed(1);
+          ds[binOf[k]] += "M" + x1 + " " + y1 + "L" + x2 + " " + y2;
+        }
+        binPaths.forEach(function (bp, q) { bp.setAttribute("d", ds[q]); });
+      } else binPaths[0].setAttribute("d", d);
       var a = pts[0], e = pts[pts.length - 1];
       startDot.setAttribute("cx", (mapX(a[1], z) - x0).toFixed(1)); startDot.setAttribute("cy", (mapY(a[0], z) - y0).toFixed(1));
-      endDot.setAttribute("cx", (mapX(e[1], z) - x0).toFixed(1)); endDot.setAttribute("cy", (mapY(e[0], z) - y0).toFixed(1));
+      endDot.setAttribute("transform", "translate(" + (mapX(e[1], z) - x0).toFixed(1) + " " + (mapY(e[0], z) - y0).toFixed(1) + ")");
       if (!m.tiles) return;
       var tx0 = Math.floor(x0 / 256), tx1 = Math.floor((x0 + m.W) / 256), ty0 = Math.max(0, Math.floor(y0 / 256)), ty1 = Math.min(n - 1, Math.floor((y0 + m.H) / 256));
       var rowsN = Math.max(1, ty1 - ty0 + 1);
@@ -875,7 +1086,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     // drag to pan
     var drag = null;
     box.addEventListener("pointerdown", function (ev) {
-      if (ev.target && ev.target.closest && ev.target.closest(".mapctl,.mapattr")) return;
+      if (ev.target && ev.target.closest && ev.target.closest(".mapctl,.mapattr,.maptoggle")) return;
       drag = { x: ev.clientX, y: ev.clientY }; box.classList.add("drag");
       try { box.setPointerCapture(ev.pointerId); } catch (e) { /* not supported */ }
     });
@@ -901,7 +1112,7 @@ export const DASHBOARD_JS = String.raw`(function () {
       attr.classList.toggle("hidden", !m.tiles);
       showNote(m.tiles ? "" : (mapEnabled() ? "Offline. Showing the plain GPS track." : "Plain GPS track (map tiles are off)."));
     }
-    var toggle = h("button", { type: "button", "aria-pressed": m.tiles ? "true" : "false", text: m.tiles ? "Hide map" : "Show map", onclick: function () {
+    var toggle = h("button", { type: "button", "class": "maptoggle", "aria-pressed": m.tiles ? "true" : "false", text: m.tiles ? "Hide map" : "Show map", onclick: function () {
       var on = !mapEnabled(); setMapEnabled(on);
       m.tiles = on && !(typeof navigator !== "undefined" && navigator.onLine === false); m.loaded = 0; m.errors = 0;
       clearTiles(); toggle.textContent = on ? "Hide map" : "Show map"; toggle.setAttribute("aria-pressed", on ? "true" : "false");
@@ -913,15 +1124,53 @@ export const DASHBOARD_JS = String.raw`(function () {
       var ro = new ResizeObserver(function () { if (!box.isConnected) { ro.disconnect(); return; } firstSize(); });
       ro.observe(box);
     } else setTimeout(firstSize, 0);
-    return panel(null, [
-      h("div", { "class": "maphead" }, [h("h2", { text: "Route" }), toggle]),
+    if (opts.label) box.appendChild(h("div", { "class": "mappill" }, [ico(opts.icon || "route"), h("span", { text: opts.label })]));
+    box.appendChild(toggle);
+    if (classes) box.appendChild(h("div", { "class": "maplegend", role: "img", "aria-label": "Route colour: slow is orange, fast is green" }, [h("div", { text: "Slow to Fast" }), h("div", { "class": "bar" }), h("div", { "class": "ends" }, [h("span", { text: "Slow" }), h("span", { text: "Fast" })])]));
+    var card = panel(null, [
       box,
-      h("p", { "class": "sub", text: "Map data \u00a9 OpenStreetMap contributors. Tiles load from tile.openstreetmap.org for this workout only, so that server sees the area you view. North is up. Green is the start, red the finish." })
+      h("p", { "class": "sub", text: "Map data \u00a9 OpenStreetMap contributors. Tiles load from tile.openstreetmap.org for this workout only, so that server sees the area you view. North is up. Green is the start, the checkered flag the finish." })
+    ]);
+    card.classList.add("mapcard");
+    return card;
+  }
+  /** Big distance plus a grid of the figures that exist for this workout (nothing is shown for a missing value). */
+  function routeStats(w, sm, speed) {
+    var items = [];
+    var item = function (icon, label, value, unit, extra) {
+      items.push(h("div", { "class": "it" }, [h("div", { "class": "l" }, [ico(icon), h("span", { text: label })]), h("div", { "class": "v" }, [value, unit ? h("small", { text: unit }) : null]), extra ? h("div", { "class": "x", text: extra }) : null]));
+    };
+    var swim = /swim/.test(String(w.activity_type || ""));
+    if (isNum(w.duration_s) && w.duration_s > 0) item("clock", "Workout time", fmtDur(w.duration_s));
+    if (!swim && isNum(sm.avg_pace_s_km) && sm.avg_pace_s_km > 0) {
+      if (speed) item("gauge", "Avg speed", fmt1(3600 / sm.avg_pace_s_km), "km/h", isNum(sm.best_pace_s_km) && sm.best_pace_s_km > 0 ? "best " + fmt1(3600 / sm.best_pace_s_km) + " km/h" : "");
+      else item("gauge", "Avg pace", fmtPace(sm.avg_pace_s_km), "/km", isNum(sm.best_pace_s_km) && sm.best_pace_s_km > 0 ? "best " + fmtPace(sm.best_pace_s_km) + " /km" : "");
+    }
+    if (isNum(w.avg_hr_bpm) && w.avg_hr_bpm > 0) item("heart", "Avg heart rate", fmtInt(w.avg_hr_bpm), "bpm", isNum(w.max_hr_bpm) && w.max_hr_bpm > 0 ? "max " + fmtInt(w.max_hr_bpm) : "");
+    if (isNum(w.calories_kcal) && w.calories_kcal > 0) item("flame", "Calories", fmtInt(w.calories_kcal), "kcal");
+    if (isNum(sm.avg_cadence_spm) && sm.avg_cadence_spm > 0) {
+      var cx = [];
+      if (isNum(sm.max_cadence_spm)) cx.push("max " + fmtInt(sm.max_cadence_spm));
+      if (isNum(sm.steps)) cx.push(fmtInt(sm.steps) + " steps");
+      item("steps", "Avg cadence", fmtInt(sm.avg_cadence_spm), "spm", cx.join(" | "));
+    }
+    var big = isNum(w.distance_m) && w.distance_m > 0 ? h("div", { "class": "big" }, [h("span", { "class": "v", text: (w.distance_m / 1000).toFixed(2) }), h("span", { "class": "u", text: "km" })]) : null;
+    return h("section", { "class": "panel rstats" }, [
+      big,
+      h("div", { "class": "when sub" }, [shortDate(w.started_date) + " " + String(w.started_date || "").slice(0, 4) + " \u00b7 " + localTime(w.started_at) + " - " + localTime(w.ended_at) + " ", typeBadge(w, true)]),
+      items.length ? h("div", { "class": "grid" }, items) : null
     ]);
   }
-  function analysisView(w, a) {
+  function analysisView(w, a, top) {
     var sm = a.summary || {}, se = a.series, speed = isSpeedSport(w.activity_type), out = [];
-    var cards = analysisCards(w, sm);
+    // With a GPS route the map card comes first, full width, then the stats card; the header and the four tiles above it are replaced by them.
+    var hasRoute = !!(a.route && a.route.points && a.route.points.length >= 2);
+    if (hasRoute) {
+      var mapCard = routePanel(a.route, { label: typeName(w.activity_type), icon: sportIconName(w.activity_type), classes: routeSegmentClasses(a.route, se, speed) });
+      out.push(mapCard, routeStats(w, sm, speed));
+      (top || []).forEach(function (el) { el.classList.add("hidden"); });
+    }
+    var cards = analysisCards(w, sm, hasRoute);
     if (cards.length) out.push(h("div", { class: "cards" }, cards));
     var grid1 = [], grid2 = [];
     if (se && se.t && se.t.length) {
@@ -938,19 +1187,19 @@ export const DASHBOARD_JS = String.raw`(function () {
     if (zp) grid2.push(zp);
     if (grid1.length) out.push(h("div", { class: "grid2" }, grid1));
     if (grid2.length) out.push(h("div", { class: "grid2" }, grid2));
-    var grid3 = [splitsPanel(a.splits, speed), routePanel(a.route)].filter(Boolean);
+    var grid3 = [splitsPanel(a.splits, speed)].filter(Boolean);
     if (grid3.length) out.push(h("div", { class: "grid2" }, grid3));
     if (!out.length) out.push(panel("", empty(ANALYSIS_MSG.no_detail)));
     else if (!a.route) out.push(h("p", { class: "sub", text: "No GPS track was recorded, so there is no route." }));
     return h("div", null, out);
   }
-  function renderAnalysis(w, id, token) {
+  function renderAnalysis(w, id, token, top) {
     var box = h("div", { class: "wa" }, skelPanel());
     api("workouts/" + encodeURIComponent(id) + "/analysis").then(function (r) {
       if (token !== navToken) return;
       clear(box);
       if (!r || r.status !== "ok" || !r.analysis) { box.appendChild(panel("", empty(ANALYSIS_MSG[r && r.reason] || "No detailed data for this workout."))); return; }
-      box.appendChild(analysisView(w, r.analysis));
+      box.appendChild(analysisView(w, r.analysis, top));
     }).catch(function (e) { if (token === navToken) { clear(box); box.appendChild(panel("", h("div", { class: "empty err", text: "Could not load workout data: " + e.message }))); } });
     return box;
   }
@@ -973,11 +1222,104 @@ export const DASHBOARD_JS = String.raw`(function () {
   // detail pane (ui.select); the list keeps its loaded pages and scroll position. Pages load through an IntersectionObserver
   // on a sentinel at the end of the list's own scroll container, with a Load more button only when the API is missing.
   // Search and the sport dropdown reset the list through the API (type and q parameters).
+  var ddSeq = 0;
+  /**
+   * Sport filter: a button (select-only combobox) that opens a floating panel with a search field and a listbox.
+   * Arrow keys move, Enter picks, Escape or a click outside closes. Returns { el, set(type) }; onPick(type) runs when the user chooses.
+   */
+  function sportDropdown(wk, onPick) {
+    var uid = "wsd" + (++ddSeq), types = wk.types || [], total = 0;
+    types.forEach(function (t) { total += t.n; });
+    var items = [{ type: "", name: "All sports", n: total }].concat(types.map(function (t) { return { type: t.type, name: typeName(t.type), n: t.n }; }));
+    var cur = wk.type || "", shown = items.slice(), act = -1, isOpen = false;
+    var icoBox = h("span", { "class": "wdd-ico" }), nameEl = h("span", { "class": "wdd-name" });
+    var btn = h("button", { type: "button", "class": "wtype", role: "combobox", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-controls": uid + "-list", "aria-label": "Filter by sport" }, [icoBox, nameEl, ico("chevron", "dd-chev")]);
+    var search = h("input", { type: "search", "class": "wdd-search", "aria-label": "Search sports", "aria-controls": uid + "-list", placeholder: "Search sports", autocomplete: "off", maxlength: "40" });
+    var list = h("div", { id: uid + "-list", role: "listbox", "aria-label": "Sports", "class": "wdd-list" });
+    var menu = h("div", { "class": "wmenu" }, [search, list]);
+    menu.hidden = true;
+    var wrap = h("div", { "class": "wtype-wrap" }, [btn, menu]);
+    function iconFor(type) { return type ? sportChip(type) : h("span", { "class": "sico neutral", "aria-hidden": "true" }, ico("grid")); }
+    function find(type) { for (var i = 0; i < items.length; i++) if (items[i].type === type) return items[i]; return null; }
+    function set(type) {
+      cur = type || "";
+      var it = find(cur);
+      clear(icoBox); icoBox.appendChild(iconFor(cur));
+      nameEl.textContent = it ? it.name : typeName(cur);
+    }
+    function setActive(i, scroll) {
+      var opts = list.children;
+      if (!shown.length) { act = -1; search.removeAttribute("aria-activedescendant"); btn.removeAttribute("aria-activedescendant"); return; }
+      act = Math.max(0, Math.min(shown.length - 1, i));
+      for (var k = 0; k < opts.length; k++) opts[k].classList.toggle("act", k === act);
+      var id = uid + "-o" + act;
+      search.setAttribute("aria-activedescendant", id); btn.setAttribute("aria-activedescendant", id);
+      if (scroll && opts[act] && opts[act].scrollIntoView) opts[act].scrollIntoView({ block: "nearest" });
+    }
+    function paint() {
+      clear(list);
+      if (!shown.length) { list.appendChild(h("div", { "class": "wdd-none", text: "No sports match" })); return; }
+      shown.forEach(function (it, i) {
+        var on = it.type === cur;
+        var o = h("div", { id: uid + "-o" + i, role: "option", "aria-selected": on ? "true" : "false", "data-type": it.type, "class": "wopt" + (on ? " on" : "") }, [
+          iconFor(it.type), h("span", { "class": "nm", text: it.name }), h("span", { "class": "cnt", text: String(it.n) }), ico("check", "ck")
+        ]);
+        o.addEventListener("click", function () { pick(it.type); });
+        o.addEventListener("mousemove", function () { if (act !== i) setActive(i, false); });
+        list.appendChild(o);
+      });
+    }
+    function filter() {
+      var q = search.value.trim().toLowerCase();
+      shown = items.filter(function (it) { return !q || it.name.toLowerCase().indexOf(q) >= 0; });
+      paint();
+      var si = -1; shown.forEach(function (it, i) { if (it.type === cur) si = i; });
+      setActive(si >= 0 ? si : 0, true);
+    }
+    function onDoc(ev) {
+      if (!wrap.isConnected || !wrap.contains(ev.target)) closeMenu(false);
+    }
+    function openMenu() {
+      if (isOpen) return;
+      isOpen = true; menu.hidden = false; btn.setAttribute("aria-expanded", "true");
+      search.value = ""; filter(); search.focus();
+      document.addEventListener("pointerdown", onDoc, true);
+    }
+    function closeMenu(focusBtn) {
+      if (!isOpen) return;
+      isOpen = false; menu.hidden = true; btn.setAttribute("aria-expanded", "false");
+      btn.removeAttribute("aria-activedescendant");
+      document.removeEventListener("pointerdown", onDoc, true);
+      if (focusBtn) btn.focus();
+    }
+    function pick(type) {
+      closeMenu(true);
+      if (type !== cur) { set(type); onPick(type); }
+    }
+    btn.addEventListener("click", function () { if (isOpen) closeMenu(false); else openMenu(); });
+    btn.addEventListener("keydown", function (ev) {
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); openMenu(); }
+      else if (ev.key === "Escape" && isOpen) { ev.preventDefault(); closeMenu(true); }
+    });
+    search.addEventListener("input", filter);
+    search.addEventListener("keydown", function (ev) {
+      var k = ev.key;
+      if (k === "ArrowDown") { ev.preventDefault(); setActive(act + 1, true); }
+      else if (k === "ArrowUp") { ev.preventDefault(); setActive(act - 1, true); }
+      else if (k === "Home" && ev.ctrlKey) { ev.preventDefault(); setActive(0, true); }
+      else if (k === "End" && ev.ctrlKey) { ev.preventDefault(); setActive(shown.length - 1, true); }
+      else if (k === "Enter") { ev.preventDefault(); if (shown[act]) pick(shown[act].type); }
+      else if (k === "Escape") { ev.preventDefault(); ev.stopPropagation(); closeMenu(true); }
+      else if (k === "Tab") closeMenu(false);
+    });
+    set(cur);
+    return { el: wrap, set: set };
+  }
   function viewWorkouts(box, token, rest) {
     clear(box);
     state.wkUi = null;
     var wk = state.wk, hasIO = typeof IntersectionObserver === "function";
-    var ui = { box: box, gen: 0, loading: false, done: false, failed: false, rows: {}, selId: "", skipScroll: false, observer: null, sel: null };
+    var ui = { box: box, gen: 0, loading: false, done: false, failed: false, rows: {}, selId: "", skipScroll: false, observer: null, dd: null };
     ui.split = h("div", { class: "split" });
     ui.listPane = h("div", { class: "wlist-pane" });
     ui.detailPane = h("div", { class: "wdetail" });
@@ -1028,7 +1370,7 @@ export const DASHBOARD_JS = String.raw`(function () {
       });
     }
     function paintChips() {
-      if (ui.sel) ui.sel.value = wk.type || "";
+      if (ui.dd) ui.dd.set(wk.type || "");
     }
     function resetList(type, q) {
       ui.gen++; ui.loading = false; ui.done = false; ui.failed = false;
@@ -1059,12 +1401,8 @@ export const DASHBOARD_JS = String.raw`(function () {
 
     function paintList() {
       clear(ui.listPane);
-      var total = 0; (wk.types || []).forEach(function (t) { total += t.n; });
-      var opts = [h("option", { value: "", text: "All sports (" + total + ")" })].concat((wk.types || []).map(function (t) { return h("option", { value: t.type, text: typeName(t.type) + " (" + t.n + ")" }); }));
-      var sel = h("select", { "class": "wtype", "aria-label": "Filter by sport" }, opts);
-      ui.sel = sel;
-      sel.addEventListener("change", function () { if ((wk.type || "") !== sel.value) resetList(sel.value); });
-      var typeWrap = h("div", { "class": "wtype-wrap" }, [sel, ico("chevron")]);
+      ui.dd = sportDropdown(wk, function (type) { if ((wk.type || "") !== type) resetList(type); });
+      var typeWrap = ui.dd.el;
       var input = h("input", { type: "search", "class": "wsearch", "aria-label": "Search workouts", placeholder: "Search workouts", title: "Search by sport, date or month", value: wk.q || "", autocomplete: "off", maxlength: "60" });
       var timer = 0;
       input.addEventListener("input", function () {
