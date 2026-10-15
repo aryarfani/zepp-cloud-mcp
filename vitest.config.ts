@@ -1,7 +1,7 @@
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })],
-  test: { restoreMocks: true }
+  test: { restoreMocks: true, exclude: [...configDefaults.exclude, "test/node/**"] }
 });

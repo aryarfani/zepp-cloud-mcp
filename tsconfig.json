@@ -10,5 +10,5 @@
     "types": ["./worker-configuration.d.ts", "node"],
     "lib": ["ES2024", "WebWorker"]
   },
-  "include": ["src", "scripts", "test", "vitest.config.ts", "worker-configuration.d.ts"]
+  "include": ["src", "scripts", "test", "vitest.config.ts", "vitest.node.config.ts", "worker-configuration.d.ts"]
 }
