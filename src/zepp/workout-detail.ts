@@ -24,7 +24,7 @@ export interface DownsampleMeta { original_count: number; returned_count: number
 export interface WorkoutSamplesResult extends DownsampleMeta { points: WorkoutSample[] }
 export interface WorkoutRouteResult extends DownsampleMeta { points: WorkoutRoutePoint[] }
 
-type TimedNumber = Map<number, number>;
+export type TimedNumber = Map<number, number>;
 const COORD_FACTOR = 100_000_000;
 
 function parseList(value: unknown): number[] {
@@ -32,7 +32,7 @@ function parseList(value: unknown): number[] {
   return value.split(/[;,]/).map(v => Number(v.trim())).filter(Number.isFinite);
 }
 
-function parsePairs(value: unknown, emptyDeltaIsOne = false): Array<[number, number]> {
+export function parsePairs(value: unknown, emptyDeltaIsOne = false): Array<[number, number]> {
   if (typeof value !== "string") return [];
   const pairs: Array<[number, number]> = [];
   for (const part of value.split(";").filter(Boolean)) {
@@ -47,12 +47,12 @@ function parsePairs(value: unknown, emptyDeltaIsOne = false): Array<[number, num
   return pairs;
 }
 
-function parseRows(value: unknown): number[][] {
+export function parseRows(value: unknown): number[][] {
   if (typeof value !== "string") return [];
   return value.split(";").filter(Boolean).map(part => part.split(",").map(v => Number(v.trim()))).filter(row => row.length >= 2 && row.every(Number.isFinite));
 }
 
-function cumulativeTimeline(startSec: number, pairs: Array<[number, number]>, transform: (value: number) => number | undefined = v => v): TimedNumber {
+export function cumulativeTimeline(startSec: number, pairs: Array<[number, number]>, transform: (value: number) => number | undefined = v => v): TimedNumber {
   const output: TimedNumber = new Map();
   let t = startSec;
   for (const [delta, raw] of pairs) {
@@ -63,15 +63,38 @@ function cumulativeTimeline(startSec: number, pairs: Array<[number, number]>, tr
   return output;
 }
 
-function plausibleAltitudeCm(value: number): number | undefined { return value >= -100_000 && value <= 1_000_000 ? value / 100 : undefined; }
+export function plausibleAltitudeCm(value: number): number | undefined { return value >= -100_000 && value <= 1_000_000 ? value / 100 : undefined; }
 function speedToPace(speed: number): number | undefined {
   if (!Number.isFinite(speed) || speed <= 0) return undefined;
   const pace = 1000 / speed;
   return pace >= 60 && pace <= 3600 ? pace : undefined;
 }
 
+/**
+ * Heart rate arrives as "<delta s>,<bpm>" rows. Real payloads are delta-coded after the first row ("5,105;,0;,1;,-1;..." means
+ * 105, 105, 106, 105 bpm, with an empty time delta meaning 1 s). Absolute rows are still accepted: the delta reading is only used when
+ * every later value is small and the running total stays a plausible heart rate.
+ */
+export function decodeHeartRateTimeline(value: unknown, startSec: number): TimedNumber {
+  const pairs = parsePairs(value, true);
+  const deltaLike = pairs.length > 1 && pairs.slice(1).every(([, v]) => Math.abs(v) <= 40);
+  if (deltaLike) {
+    const output: TimedNumber = new Map();
+    let t = startSec, current = 0, valid = true;
+    for (let i = 0; i < pairs.length; i++) {
+      const [delta, raw] = pairs[i]!;
+      t += delta;
+      current = i === 0 ? raw : current + raw;
+      if (current < 20 || current > 260) { valid = false; break; }
+      output.set(t, current);
+    }
+    if (valid) return output;
+  }
+  return cumulativeTimeline(startSec, pairs, v => v >= 20 && v <= 260 ? v : undefined);
+}
+
 function buildTimelines(detail: Record<string, unknown>, startSec: number) {
-  const hr = cumulativeTimeline(startSec, parsePairs(detail.heart_rate, true), v => v >= 20 && v <= 260 ? v : undefined);
+  const hr = decodeHeartRateTimeline(detail.heart_rate, startSec);
   const speed = cumulativeTimeline(startSec, parsePairs(detail.speed), v => v > 0 && v < 30 ? v : undefined);
   const power = cumulativeTimeline(startSec, parsePairs(detail.power_meter, true), v => v > 0 && v < 3000 ? v : undefined);
   const equiv = cumulativeTimeline(startSec, parsePairs(detail.equivPace, true), v => v > 0 && v < 3600 ? v : undefined);

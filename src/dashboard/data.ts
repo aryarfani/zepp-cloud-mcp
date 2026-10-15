@@ -194,6 +194,17 @@ export class DashboardData {
     return { timezone: this.timezone, workout: this.withConfidence(w), sets };
   }
 
+  /** Stored workout analysis (series, splits, zones, route), or null when none was stored yet. */
+  analysis(id: string): { status: string; fetched_at: string; analysis: unknown } | null {
+    if (!this.available()) return null;
+    let row: Row | null;
+    try { row = this.get("SELECT status, analysis_json, fetched_at FROM workout_details WHERE workout_id = ?", id); } catch { return null; }
+    if (!row) return null;
+    let analysis: unknown = null;
+    if (typeof row.analysis_json === "string") { try { analysis = JSON.parse(row.analysis_json); } catch { analysis = null; } }
+    return { status: String(row.status), fetched_at: String(row.fetched_at), analysis };
+  }
+
   // ---- weight / exercises / status ----------------------------------------------------------------------------------
   weight(days: number) {
     if (!this.available()) return { available: false, days, records: [] };

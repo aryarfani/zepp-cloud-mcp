@@ -46,6 +46,11 @@ button.on{background:var(--teal);border-color:var(--teal);color:#0d1514;font-wei
 .chartwrap{position:relative}
 svg.chart{width:100%;height:auto;display:block;touch-action:manipulation;overflow:visible}
 svg.chart text{fill:var(--muted);font-size:10px}
+svg.route{width:100%;max-height:420px;display:block;color:var(--text)}
+.zones{display:flex;flex-direction:column;gap:12px;padding-top:6px}
+.zrow{display:grid;grid-template-columns:minmax(84px,110px) minmax(0,1fr) minmax(86px,120px);gap:10px;align-items:center;font-size:.82rem}
+.zrow .n{text-align:right;font-variant-numeric:tabular-nums}
+.wa{margin-top:2px}
 .tip{position:absolute;pointer-events:none;background:#0c0e11;border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:.78rem;white-space:nowrap;transform:translate(-50%,-125%);z-index:3}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-top:6px}
 table{width:100%;border-collapse:collapse;font-size:.9rem}
@@ -174,7 +179,8 @@ export const DASHBOARD_JS = String.raw`(function () {
     var pow = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10)), f = raw / pow;
     return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
   }
-  // opts: { kind: "bar"|"line", points: [{label, v, segs:[{v,color}], tip}], color, fmt, mean, emptyText, zero }
+  function pickStep(steps, raw) { for (var i = 0; i < steps.length; i++) if (steps[i] >= raw) return steps[i]; return steps[steps.length - 1] * Math.ceil(raw / steps[steps.length - 1]); }
+  // opts: { invert, steps, kind: "bar"|"line", points: [{label, v, segs:[{v,color}], tip}], color, fmt, mean, emptyText, zero }
   function chart(opts) {
     var pts = opts.points || [], vals = numbers(pts.map(function (p) { return p.v; }));
     if (!vals.length) return empty(opts.emptyText || "No data in this range");
@@ -188,12 +194,12 @@ export const DASHBOARD_JS = String.raw`(function () {
     curW = W;
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     if (opts.kind === "bar" || opts.zero) lo = Math.min(0, lo);
-    var step = niceStep(Math.max((hi - lo) / 4, 0.0001));
+    var step = opts.steps ? pickStep(opts.steps, (hi - lo) / 4) : niceStep(Math.max((hi - lo) / 4, 0.0001));
     var ymin = Math.floor(lo / step) * step, ymax = Math.ceil(hi / step) * step;
     if (ymax === ymin) ymax = ymin + step;
     var iw = W - L - R, ih = H - T - B;
     function X(i) { return L + (i + 0.5) * iw / n; }
-    function Y(v) { return T + ih - (v - ymin) / (ymax - ymin) * ih; }
+    function Y(v) { var f = (v - ymin) / (ymax - ymin); return opts.invert ? T + f * ih : T + ih - f * ih; }
     var fmt = opts.fmt || fmtInt, color = opts.color || "var(--teal)";
     var svg = s("svg", { "class": "chart", viewBox: "0 0 " + W + " " + H, role: "img", preserveAspectRatio: "xMidYMid meet" });
     for (var t = ymin; t <= ymax + step / 2; t += step) {
@@ -363,7 +369,7 @@ export const DASHBOARD_JS = String.raw`(function () {
         cards.appendChild(card("Hybrid Charge", fmtInt(c.last), "/ 100", when(c.date, o.today) + " | avg " + fmtInt(c.avg) + ", " + fmtInt(c.min) + " - " + fmtInt(c.max), gauge, function () { go("charge"); }));
       } else cards.appendChild(emptyCard("Hybrid Charge", "No Hybrid Charge data"));
       box.appendChild(cards);
-      box.appendChild(w ? card("Last workout", typeName(w.activity_type), "", shortDate(w.started_date) + " " + localTime(w.started_at) + " | " + fmtDur(w.duration_s) + (isNum(w.distance_m) && w.distance_m > 0 ? " | " + fmtKm(w.distance_m) : ""), typeBadge(w), function () { go("workouts/" + encodeURIComponent(w.workout_id)); }) : emptyCard("Last workout", "No workouts yet"));
+      box.appendChild(w ? card("Last workout", typeName(w.activity_type), "", shortDate(w.started_date) + " " + localTime(w.started_at) + " | " + fmtDur(w.duration_s) + (isNum(w.distance_m) && w.distance_m > 0 ? " | " + fmtKm(w.distance_m) : "") + paceSub(w), typeBadge(w), function () { go("workouts/" + encodeURIComponent(w.workout_id)); }) : emptyCard("Last workout", "No workouts yet"));
       var days = dateList(t.start, t.end), sp = stepsPoints(t, days);
       box.appendChild(h("div", { class: "grid2" }, [
         panel("Steps, last 30 days", chart({ kind: "bar", points: sp, mean: avg(sp.map(function (p) { return p.v; })), emptyText: "No step data in this range" })),
@@ -513,6 +519,8 @@ export const DASHBOARD_JS = String.raw`(function () {
         card("Heart rate", fmtInt(w.avg_hr_bpm), "bpm avg", "max " + fmtInt(w.max_hr_bpm)),
         card("Energy", fmtInt(w.calories_kcal), "kcal", isNum(w.training_load) ? "load " + fmtInt(w.training_load) : "")
       ]));
+      var strengthWorkout = w.zepp_type === 52 || /strength/.test(String(w.activity_type));
+      if (!strengthWorkout) pane.appendChild(renderAnalysis(w, id, token));
       if (r.sets && r.sets.length) {
         var volume = 0; r.sets.forEach(function (x) { if (isNum(x.weight_kg) && x.weight_kg > 0 && isNum(x.reps)) volume += x.weight_kg * x.reps; });
         pane.appendChild(panel("Sets: " + r.sets.length + ", volume " + fmtInt(volume) + " kg", table(["#", "Exercise", "Reps", "Weight", "Time", "Avg HR"], r.sets.map(function (x) {
@@ -523,7 +531,146 @@ export const DASHBOARD_JS = String.raw`(function () {
       }
     }).catch(function (e) { if (token === navToken) { clear(pane); pane.appendChild(h("div", { class: "empty err", text: "Could not load: " + e.message })); } });
   }
-  function exercisesTab(box, token) {
+  // ---- running / walking / cycling detail (pace, heart rate, elevation, splits, route) ------------------------------------------------
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function fmtClock(sec) {
+    if (!isNum(sec)) return "-";
+    var r = Math.round(sec), hh = Math.floor(r / 3600), mm = Math.floor((r % 3600) / 60), ss = r % 60;
+    return hh > 0 ? hh + ":" + pad2(mm) + ":" + pad2(ss) : mm + ":" + pad2(ss);
+  }
+  function fmtPace(sec) { return isNum(sec) && sec > 0 ? fmtClock(sec) : "-"; }
+  function isSpeedSport(t) { return /cycl|bik|ride/.test(String(t || "")); }
+  function paceSub(w) {
+    if (!w || !isNum(w.distance_m) || w.distance_m < 100 || !isNum(w.duration_s) || w.duration_s <= 0) return "";
+    if (isSpeedSport(w.activity_type)) return " | " + fmt1(w.distance_m / w.duration_s * 3.6) + " km/h";
+    if (/run|walk|hik|trek|jog/.test(String(w.activity_type || ""))) return " | " + fmtPace(w.duration_s / w.distance_m * 1000) + "/km";
+    return "";
+  }
+  var ANALYSIS_MSG = {
+    no_detail: "Zepp has no detailed data (pace, heart rate, route) for this workout.",
+    rate_limited: "Too many detail requests just now. Try again in a few minutes.",
+    upstream_error: "Zepp did not return the detail right now. Try again in a few minutes.",
+    not_synced: "Detail for this workout is not synced yet. The next daily sync will fetch it.",
+    no_credentials: "Detail is not available because the server has no Zepp connection configured."
+  };
+  function analysisCards(w, sm) {
+    var cards = [], speed = isSpeedSport(w.activity_type);
+    if (isNum(sm.avg_pace_s_km) || isNum(sm.best_pace_s_km)) {
+      if (speed) {
+        cards.push(card("Speed", isNum(sm.avg_pace_s_km) ? fmt1(3600 / sm.avg_pace_s_km) : "-", "km/h avg", isNum(sm.best_pace_s_km) ? "best " + fmt1(3600 / sm.best_pace_s_km) + " km/h" : ""));
+      } else {
+        cards.push(card("Pace", fmtPace(sm.avg_pace_s_km), "/km avg", isNum(sm.best_pace_s_km) ? "best " + fmtPace(sm.best_pace_s_km) + " /km" : ""));
+      }
+    }
+    if (isNum(sm.avg_cadence_spm)) {
+      var cs = [];
+      if (isNum(sm.max_cadence_spm)) cs.push("max " + fmtInt(sm.max_cadence_spm));
+      if (isNum(sm.steps)) cs.push(fmtInt(sm.steps) + " steps");
+      if (isNum(sm.stride_cm)) cs.push(fmtInt(sm.stride_cm) + " cm stride");
+      cards.push(card("Cadence", fmtInt(sm.avg_cadence_spm), "spm avg", cs.join(" | ")));
+    }
+    if (isNum(sm.ascent_m) || isNum(sm.max_altitude_m)) {
+      var es = [];
+      if (isNum(sm.descent_m)) es.push(fmtInt(sm.descent_m) + " m descent");
+      if (isNum(sm.min_altitude_m) && isNum(sm.max_altitude_m)) es.push(fmtInt(sm.min_altitude_m) + " to " + fmtInt(sm.max_altitude_m) + " m");
+      cards.push(card("Elevation", fmtInt(sm.ascent_m), "m ascent", es.join(" | ")));
+    }
+    if (isNum(sm.training_load) || isNum(sm.aerobic_te) || isNum(sm.vo2max)) {
+      var ts = [];
+      if (isNum(sm.aerobic_te)) ts.push("aerobic TE " + fmt1(sm.aerobic_te));
+      if (isNum(sm.anaerobic_te) && sm.anaerobic_te > 0) ts.push("anaerobic " + fmt1(sm.anaerobic_te));
+      if (isNum(sm.vo2max)) ts.push("VO2max " + fmtInt(sm.vo2max));
+      cards.push(card("Training", isNum(sm.training_load) ? fmtInt(sm.training_load) : "-", "load", ts.join(" | ")));
+    }
+    if (isNum(sm.avg_power_w)) cards.push(card("Power", fmtInt(sm.avg_power_w), "W avg", isNum(sm.max_power_w) ? "max " + fmtInt(sm.max_power_w) + " W" : ""));
+    return cards;
+  }
+  function seriesPoints(se, key, conv, cap) {
+    return se.t.map(function (t, i) {
+      var d = se.dist_m[i], v = se[key][i];
+      v = isNum(v) ? (conv ? conv(v) : v) : null;
+      if (isNum(v) && isNum(cap) && v > cap) v = null;
+      return { label: isNum(d) && d > 0 ? (d / 1000).toFixed(1) + " km" : fmtClock(t), v: v,
+        tip: fmtClock(t) + (isNum(d) && d > 0 ? " | " + (d / 1000).toFixed(2) + " km" : "") + " | " + (isNum(v) ? (key === "pace_s_km" && !conv ? fmtPace(v) + " /km" : key === "pace_s_km" ? fmt1(v) + " km/h" : key === "hr_bpm" ? fmtInt(v) + " bpm" : fmtInt(v) + " m") : "-") };
+    });
+  }
+  var PACE_STEPS = [5, 10, 15, 30, 60, 120, 300];
+  var ZONE_COLORS = ["#5b8def", "#37c6a0", "#f2c14e", "#f2884b", "#e5484d", "#b15de5"];
+  function zonePanel(zones) {
+    var total = 0;
+    zones.forEach(function (z) { total += z.seconds; });
+    if (!total) return null;
+    return panel("Heart-rate zones", h("div", { class: "zones" }, zones.map(function (z, i) {
+      var pct = z.seconds / total * 100, label = i === 0 ? "up to " + z.upper_bpm : z.lower_bpm + " to " + z.upper_bpm;
+      var bar = s("svg", { viewBox: "0 0 100 10", width: "100%", height: 10, preserveAspectRatio: "none", role: "img" }, [
+        s("rect", { x: 0, y: 0, width: 100, height: 10, rx: 2, fill: "currentColor", "fill-opacity": "0.08" }),
+        pct > 0 ? s("rect", { x: 0, y: 0, width: Math.max(0.8, pct), height: 10, rx: 2, fill: ZONE_COLORS[i % ZONE_COLORS.length] }) : null
+      ]);
+      return h("div", { class: "zrow" }, [h("span", { class: "sub", text: label + " bpm" }), bar, h("span", { class: "n", text: fmtClock(z.seconds) + " (" + Math.round(pct) + "%)" })]);
+    })));
+  }
+  function splitsPanel(splits, speed) {
+    if (!splits || !splits.length) return null;
+    var fastest = null;
+    splits.forEach(function (x) { if (!x.partial && (fastest === null || x.pace_s_km < fastest)) fastest = x.pace_s_km; });
+    var rows = splits.map(function (x) {
+      var pace = speed ? fmt1(3600 / x.pace_s_km) + " km/h" : fmtPace(x.pace_s_km) + " /km";
+      return [x.partial ? (x.distance_m / 1000).toFixed(2) + " km" : String(x.km), fmtClock(x.time_s), x.pace_s_km === fastest ? h("strong", { text: pace }) : pace, isNum(x.avg_hr_bpm) ? fmtInt(x.avg_hr_bpm) : null, isNum(x.cadence_spm) ? fmtInt(x.cadence_spm) : null];
+    });
+    return panel("Splits", table(["Km", "Time", speed ? "Speed" : "Pace", "Avg HR", "Cadence"], rows, [0, 1, 2, 3, 4]));
+  }
+  function routePanel(route) {
+    if (!route || !route.points || route.points.length < 2) return null;
+    var b = route.bbox, k = Math.cos((b[0] + b[2]) / 2 * Math.PI / 180), W = 600, P = 20;
+    var spanX = Math.max((b[3] - b[1]) * k, 1e-9), spanY = Math.max(b[2] - b[0], 1e-9);
+    var scale = Math.min((W - 2 * P) / spanX, (W - 2 * P) / spanY), w = spanX * scale + 2 * P, hgt = spanY * scale + 2 * P;
+    function X(p) { return P + (p[1] - b[1]) * k * scale; }
+    function Y(p) { return P + (b[2] - p[0]) * scale; }
+    var d = route.points.map(function (p, i) { return (i ? "L" : "M") + X(p).toFixed(1) + " " + Y(p).toFixed(1); }).join(" ");
+    var first = route.points[0], last = route.points[route.points.length - 1];
+    var svg = s("svg", { "class": "route", viewBox: "0 0 " + w.toFixed(0) + " " + hgt.toFixed(0), role: "img", preserveAspectRatio: "xMidYMid meet" }, [
+      s("rect", { x: 0, y: 0, width: w, height: hgt, rx: 10, fill: "currentColor", "fill-opacity": "0.04" }),
+      s("path", { d: d, fill: "none", stroke: "var(--teal)", "stroke-width": "3", "stroke-linejoin": "round", "stroke-linecap": "round" }),
+      s("circle", { cx: X(first), cy: Y(first), r: 6, fill: "var(--good)" }, s("title", { text: "Start" })),
+      s("circle", { cx: X(last), cy: Y(last), r: 6, fill: "var(--bad)" }, s("title", { text: "End" }))
+    ]);
+    return panel("Route", [svg, h("p", { class: "sub", text: "Plain GPS track (no map tiles). Green is the start, red the finish. North is up." })]);
+  }
+  function analysisView(w, a) {
+    var sm = a.summary || {}, se = a.series, speed = isSpeedSport(w.activity_type), out = [];
+    var cards = analysisCards(w, sm);
+    if (cards.length) out.push(h("div", { class: "cards" }, cards));
+    var grid1 = [], grid2 = [];
+    if (se && se.t && se.t.length) {
+      var hasPace = numbers(se.pace_s_km).length, hasHr = numbers(se.hr_bpm).length, hasAlt = numbers(se.alt_m).length;
+      if (hasPace) {
+        var cap = isNum(sm.avg_pace_s_km) ? sm.avg_pace_s_km * 2.2 : 1200;
+        if (speed) grid1.push(panel("Speed", chart({ kind: "line", points: seriesPoints(se, "pace_s_km", function (p) { return 3600 / p; }), fmt: function (v) { return fmt1(v); }, mean: isNum(sm.avg_pace_s_km) ? 3600 / sm.avg_pace_s_km : null, color: "var(--teal)", emptyText: "No speed data" })));
+        else grid1.push(panel("Pace (min/km, faster is higher)", chart({ kind: "line", points: seriesPoints(se, "pace_s_km", null, cap), fmt: fmtPace, invert: true, steps: PACE_STEPS, mean: sm.avg_pace_s_km, color: "var(--teal)", emptyText: "No pace data" })));
+      }
+      if (hasHr) grid1.push(panel("Heart rate (bpm)", chart({ kind: "line", points: seriesPoints(se, "hr_bpm"), fmt: fmtInt, mean: sm.avg_hr_bpm, color: "var(--bad)", emptyText: "No heart-rate data" })));
+      if (hasAlt) grid2.push(panel("Elevation (m)", chart({ kind: "line", points: seriesPoints(se, "alt_m"), fmt: fmtInt, color: "var(--purple)", emptyText: "No elevation data" })));
+    }
+    var zp = a.zones && a.zones.length ? zonePanel(a.zones) : null;
+    if (zp) grid2.push(zp);
+    if (grid1.length) out.push(h("div", { class: "grid2" }, grid1));
+    if (grid2.length) out.push(h("div", { class: "grid2" }, grid2));
+    var grid3 = [splitsPanel(a.splits, speed), routePanel(a.route)].filter(Boolean);
+    if (grid3.length) out.push(h("div", { class: "grid2" }, grid3));
+    if (!out.length) out.push(panel("", empty(ANALYSIS_MSG.no_detail)));
+    else if (!a.route) out.push(h("p", { class: "sub", text: "No GPS track was recorded, so there is no route." }));
+    return h("div", null, out);
+  }
+  function renderAnalysis(w, id, token) {
+    var box = h("div", { class: "wa" }, panel("", empty("Loading workout data...")));
+    api("workouts/" + encodeURIComponent(id) + "/analysis").then(function (r) {
+      if (token !== navToken) return;
+      clear(box);
+      if (!r || r.status !== "ok" || !r.analysis) { box.appendChild(panel("", empty(ANALYSIS_MSG[r && r.reason] || "No detailed data for this workout."))); return; }
+      box.appendChild(analysisView(w, r.analysis));
+    }).catch(function (e) { if (token === navToken) { clear(box); box.appendChild(panel("", h("div", { class: "empty err", text: "Could not load workout data: " + e.message }))); } });
+    return box;
+  }  function exercisesTab(box, token) {
     return api("exercises").then(function (r) {
       if (token !== navToken) return;
       var list = r.exercises || [];

@@ -26,10 +26,10 @@ describe("runSync with a mocked Zepp client", () => {
     expect(first.counts.daily).toBeGreaterThan(0);
     expect(first.counts.sleep).toBeGreaterThan(0);
     expect(first.counts.workouts).toBeGreaterThan(0);
-    // 20 days at 14-day windows = 2 windows x (band_data + history), plus one detail request for the strength workout.
+    // 20 days at 14-day windows = 2 windows x (band_data + history), plus one detail request for the strength workout and one for the run (stored analysis backfill).
     expect(calls.filter(c => c.path === "/v1/data/band_data.json")).toHaveLength(2);
     expect(calls.filter(c => c.path === "/v1/sport/run/history.json").length).toBeGreaterThanOrEqual(2);
-    expect(calls.filter(c => c.path === "/v1/sport/run/detail.json")).toHaveLength(1);
+    expect(calls.filter(c => c.path === "/v1/sport/run/detail.json")).toHaveLength(2);
     // sequential with a pause between requests
     expect(sleeps.length).toBe(calls.length - 1);
     expect(sleeps.every(ms => ms === 250)).toBe(true);
@@ -38,7 +38,7 @@ describe("runSync with a mocked Zepp client", () => {
     const second = await runSync(ctx, store, opts(), "scheduled");
     expect(second.range).toEqual({ start: "2026-08-29", end: "2026-08-31" });
     expect(calls.filter(c => c.path === "/v1/data/band_data.json")).toHaveLength(1);
-    expect(calls.filter(c => c.path === "/v1/sport/run/detail.json")).toHaveLength(0); // already checked
+    expect(calls.filter(c => c.path === "/v1/sport/run/detail.json")).toHaveLength(0); // already checked / analysed (an empty analysis is remembered too)
   });
 
   it("is idempotent: syncing the same window twice leaves identical row counts", async () => {
@@ -97,7 +97,7 @@ describe("runSync with a mocked Zepp client", () => {
     const store = memStore();
     const bad = mockCtx({ detail: { nothing: "recognizable" } });
     const result = await runSync(bad.ctx, store, opts(), "manual", { days: 5 });
-    expect(result).toMatchObject({ ok: true, status: "ok_with_warnings", counts: { warnings: 1, strength_sets: 0 } });
+    expect(result).toMatchObject({ ok: true, status: "ok_with_warnings", counts: { warnings: 2, strength_sets: 0 } });
     expect(store.isStrengthChecked(STRENGTH_ID)).toBe(false);
     const fixed = await runSync(mockCtx().ctx, store, opts(), "manual", { days: 5 });
     expect(fixed.counts.strength_sets).toBe(4);
@@ -131,7 +131,7 @@ describe("sync service", () => {
       enabled: true, running: false,
       last_run: { ok: true, status: "ok", trigger: "manual" },
       tables: { workouts: { rows: 2 }, strength_sets: { rows: 4, workouts: 1 } },
-      db: { schema_version: 2 }
+      db: { schema_version: 3 }
     });
     expect(status.last_success_at).toBeTruthy();
     expect(status.schedule.timezone).toBe(config.USER_TIMEZONE);

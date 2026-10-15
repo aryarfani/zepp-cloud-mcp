@@ -18,6 +18,11 @@ export interface DashboardOptions {
   /** Optional DASHBOARD_SESSION_SECRET (at least 32 characters). Without it the signing key is derived from the owner password. */
   sessionSecret?: string;
   data: DashboardData;
+  /**
+   * Optional: fetch + store the analysis of one workout from Zepp (server side only, the browser never sees Zepp credentials).
+   * Called at most once per workout that has no stored analysis; it must rate-limit itself.
+   */
+  loadAnalysis?: (workoutId: string) => Promise<{ status: "ok"; analysis: unknown } | { status: "unavailable"; reason: string }>;
   /** Optional: live sync status (next run, running) merged into /dashboard/api/status. */
   syncStatus?: () => unknown;
   now?: () => number;
@@ -153,6 +158,20 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
           return json(data.workouts({ limit, offset, ...(days !== undefined ? { days } : {}), ...(type ? { type } : {}) }));
         }
         default: {
+          if (path.startsWith("workouts/") && path.endsWith("/analysis")) {
+            let id = "";
+            try { id = decodeURIComponent(path.slice("workouts/".length, -"/analysis".length)); } catch { /* falls through to 404 */ }
+            if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(id)) return json({ error: "Not found" }, 404);
+            const found = data.workout(id) as { workout: { activity_type?: unknown; zepp_type?: unknown } } | null;
+            if (!found) return json({ error: "Not found" }, 404);
+            if (found.workout.zepp_type === 52 || /strength/.test(String(found.workout.activity_type))) return json({ status: "unavailable", reason: "strength" });
+            const stored = data.analysis(id);
+            if (stored?.status === "ok" && stored.analysis) return json({ status: "ok", source: "stored", fetched_at: stored.fetched_at, analysis: stored.analysis });
+            if (stored?.status === "empty") return json({ status: "unavailable", reason: "no_detail" });
+            if (!opts.loadAnalysis) return json({ status: "unavailable", reason: "not_synced" });
+            const loaded = await opts.loadAnalysis(id);
+            return json(loaded.status === "ok" ? { status: "ok", source: "fetched", analysis: loaded.analysis } : loaded);
+          }
           if (path.startsWith("workouts/")) {
             // Workout ids look like "zepp:<trackid>:<source>", so the colons arrive percent-encoded.
             let id = "";

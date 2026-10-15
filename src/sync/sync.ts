@@ -12,6 +12,7 @@ import { parseStrengthLap } from "../zepp/strength";
 import { fetchWeightEntries } from "../zepp/weight";
 import { fetchWorkoutHistoryWithRaw, fetchWorkoutRaw } from "../zepp/workouts";
 import { EMPTY_COUNTS, type SyncRunCounts, type SyncTrigger, type ZeppStore } from "../store/store";
+import { fetchAndStoreAnalysis } from "./details";
 
 export interface SyncOptions {
   backfillDays: number;
@@ -37,6 +38,9 @@ export interface SyncResult {
 }
 
 const STRENGTH_ZEPP_TYPE = 52;
+/** Non-strength workouts get a stored analysis (series, splits, route) for this many days back, newest first, at most this many per run. */
+const DETAIL_BACKFILL_DAYS = 90;
+const MAX_DETAILS_PER_RUN = 30;
 const FATAL_KINDS = new Set(["auth_expired", "upstream_rate_limited"]);
 /** How far back the event stream availability probe looks. */
 const MANIFEST_WINDOW_DAYS = 90;
@@ -143,6 +147,23 @@ export async function runSync(
         if (skipped) counts.warnings++;
       });
     }
+
+    // Workout detail (pace/heart-rate series, splits, route) for runs, walks, rides and the like; a few per run so a backfill never hammers Zepp.
+    await optionalStep("workout details", async () => {
+      const missing = store.missingAnalysisIds(addIsoDays(end, -(DETAIL_BACKFILL_DAYS - 1)), MAX_DETAILS_PER_RUN);
+      let stored = 0;
+      for (const workoutId of missing) {
+        await pause();
+        try {
+          await fetchAndStoreAnalysis(ctx, store, workoutId, new Date(now()).toISOString());
+          stored++;
+        } catch (e) {
+          if (e instanceof ZeppError && !FATAL_KINDS.has(e.kind)) { counts.warnings++; log(`workout detail skipped (${e.kind})`); continue; }
+          throw e;
+        }
+      }
+      if (missing.length) log(`workout details: ${stored}/${missing.length} stored`);
+    });
 
     // Weigh-ins are sparse: one request (up to 300 records) for the whole run window.
     const fullRange = parseDateRange(start, end, tz, 366);

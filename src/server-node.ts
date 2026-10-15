@@ -12,6 +12,7 @@ import { createSyncService, type SyncService } from './sync/service';
 import { startSyncScheduler } from './sync/scheduler';
 import { createMemoryCache, DEFAULT_MAX_CACHE_ENTRIES } from './memory-cache';
 import { createDashboard } from './dashboard/handler';
+import { createAnalysisLoader } from './dashboard/analysis-loader';
 import { DashboardData } from './dashboard/data';
 if (typeof (globalThis as any).caches === 'undefined') {
   (globalThis as any).caches = { default: createMemoryCache() } as any;
@@ -58,6 +59,7 @@ if (ownerPassword.length >= 16) {
 // Local store + daily sync (node:sqlite). A store/sync problem must never stop the MCP server from starting.
 const syncConfig = parseSyncConfig(process.env);
 let syncService: SyncService | null = null;
+let analysisLoader: ReturnType<typeof createAnalysisLoader> | undefined;
 try {
   const store = new ZeppStore(path.resolve(syncConfig.dbPath));
   try { const renamed = store.rederiveExerciseNames(); if (renamed) console.log('[zepp] re-derived ' + renamed + ' stored strength exercise name(s)'); } catch (e: any) { console.warn('[zepp] exercise name re-derive skipped: ' + (e?.message ?? 'error')); }
@@ -70,6 +72,7 @@ try {
     try { zeppCtx = createServices(parseConfig(env)); } catch (e: any) { console.warn('[zepp] sync disabled, invalid Zepp config: ' + (e?.message ?? 'error')); }
   }
   if (zeppCtx) {
+    analysisLoader = createAnalysisLoader({ ctx: zeppCtx, store, log: m => console.log('[zepp] ' + m) });
     syncService = createSyncService({ ctx: zeppCtx, store, config: syncConfig, log: m => console.log('[zepp] ' + m) });
     startSyncScheduler({ service: syncService, lastSuccessAt: () => store.lastSuccessfulRun()?.finished_at ?? null, timezone: env.USER_TIMEZONE, log: m => console.log('[zepp] ' + m) });
   } else {
@@ -91,6 +94,7 @@ if (ownerPassword.length >= 16) {
     ownerPassword,
     ...(sessionSecret ? { sessionSecret } : {}),
     data: new DashboardData(path.resolve(syncConfig.dbPath), { timezone: env.USER_TIMEZONE }),
+    ...(analysisLoader ? { loadAnalysis: analysisLoader } : {}),
     ...(syncService ? { syncStatus: () => syncService!.status() } : {})
   });
   console.log('[zepp] dashboard enabled at /dashboard');

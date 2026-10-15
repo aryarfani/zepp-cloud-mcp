@@ -9,6 +9,7 @@ import type { DailySummary, SleepNight } from "../zepp/types";
 import type { WeightEntry } from "../zepp/weight";
 import type { StrengthSet } from "../zepp/strength";
 import { sportConfidence, sportKey } from "../zepp/sport-catalog";
+import { ANALYSIS_VERSION, type WorkoutAnalysis } from "../zepp/workout-analysis";
 import { strengthExerciseName } from "../zepp/strength-exercises";
 import type { WorkoutSummary } from "../zepp/workouts";
 import { MIGRATIONS, type Migration } from "./migrations";
@@ -241,6 +242,38 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       }
       return changed;
     });
+  }
+
+  /** The stored (identity-scrubbed) history item of a workout, or undefined. */
+  workoutHistoryItem(workoutId: string): Record<string, unknown> | undefined {
+    const row = this.db.prepare("SELECT raw_json FROM workouts WHERE workout_id = ?").get(workoutId) as { raw_json: string } | undefined;
+    if (!row) return undefined;
+    try { const parsed = JSON.parse(row.raw_json); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined; } catch { return undefined; }
+  }
+
+  hasWorkoutAnalysis(workoutId: string): boolean {
+    const row = this.db.prepare("SELECT version AS v FROM workout_details WHERE workout_id = ?").get(workoutId) as { v: number } | undefined;
+    return row?.v === ANALYSIS_VERSION;
+  }
+
+  /** Store the analysis of one workout (null = the detail had nothing usable, remembered so it is not refetched). Returns the stored size in bytes. */
+  saveWorkoutAnalysis(workoutId: string, analysis: WorkoutAnalysis | null, fetchedAt: string): number {
+    const json = analysis ? JSON.stringify(analysis) : null;
+    const bytes = json ? Buffer.byteLength(json) : 0;
+    this.db.prepare(`
+INSERT INTO workout_details (workout_id, version, status, analysis_json, bytes, fetched_at) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(workout_id) DO UPDATE SET version = excluded.version, status = excluded.status, analysis_json = excluded.analysis_json, bytes = excluded.bytes, fetched_at = excluded.fetched_at`)
+      .run(workoutId, ANALYSIS_VERSION, analysis ? "ok" : "empty", json, bytes, fetchedAt);
+    return bytes;
+  }
+
+  /** Newest non-strength workouts since a date that have no current analysis yet. */
+  missingAnalysisIds(sinceDate: string, limit: number): string[] {
+    const rows = this.db.prepare(`
+SELECT w.workout_id AS id FROM workouts w LEFT JOIN workout_details d ON d.workout_id = w.workout_id AND d.version = ?
+ WHERE d.workout_id IS NULL AND (w.zepp_type IS NULL OR w.zepp_type <> 52) AND w.started_date >= ?
+ ORDER BY w.started_at DESC LIMIT ?`).all(ANALYSIS_VERSION, sinceDate, limit) as Array<{ id: string }>;
+    return rows.map(r => r.id);
   }
 
   isStrengthChecked(workoutId: string): boolean {

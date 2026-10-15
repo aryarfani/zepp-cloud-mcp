@@ -162,5 +162,20 @@ ALTER TABLE sync_runs ADD COLUMN charge_sample_rows INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sync_runs ADD COLUMN charge_insight_rows INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sync_runs ADD COLUMN emotion_rows INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sync_runs ADD COLUMN event_stream_rows INTEGER NOT NULL DEFAULT 0;
-`  }
+`  },
+  {
+    version: 3,
+    name: "workout detail analysis",
+    sql: `
+-- Compact per-workout analysis (series, splits, zones, route) derived from Zepp's detail payload; the raw payload is not kept.
+CREATE TABLE workout_details (
+  workout_id TEXT PRIMARY KEY REFERENCES workouts (workout_id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  analysis_json TEXT,
+  bytes INTEGER NOT NULL DEFAULT 0,
+  fetched_at TEXT NOT NULL
+);
+`
+  }
 ];

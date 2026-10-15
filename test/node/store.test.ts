@@ -29,13 +29,14 @@ describe("migrations", () => {
       const a = open(file);
       a.upsertDaily([{ date: "2026-08-31", steps: 10 }], "t");
       a.close();
-      const next = [...MIGRATIONS, { version: 3, name: "test column", sql: "ALTER TABLE daily_summary ADD COLUMN note TEXT;" }];
+      const L = MIGRATIONS.at(-1)!.version;
+      const next = [...MIGRATIONS, { version: L + 1, name: "test column", sql: "ALTER TABLE daily_summary ADD COLUMN note TEXT;" }];
       const b = open(file, next);
-      expect(b.schemaVersion()).toBe(3);
+      expect(b.schemaVersion()).toBe(L + 1);
       expect(b.stats().daily_summary.rows).toBe(1);
       b.close();
       const c = open(file, next);
-      expect(c.schemaVersion()).toBe(3);
+      expect(c.schemaVersion()).toBe(L + 1);
       expect(statSync(file).size).toBeGreaterThan(0);
     } finally {
       closeAll();
@@ -54,7 +55,7 @@ describe("migrations", () => {
       (v1 as any).db.prepare("UPDATE sync_runs SET finished_at = ?, ok = 1, status = 'ok', daily_rows = 1 WHERE id = ?").run("2026-08-31T01:00:01.000Z", id);
       v1.close();
       const v2 = open(file);
-      expect(v2.schemaVersion()).toBe(2);
+      expect(v2.schemaVersion()).toBe(MIGRATIONS.at(-1)!.version);
       const stats = v2.stats();
       expect(stats.daily_summary.rows).toBe(1);
       expect(stats.weight_records.rows).toBe(0);
@@ -71,7 +72,7 @@ describe("migrations", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "zepp-db-"));
     const file = path.join(dir, "zepp.db");
     try {
-      open(file, [...MIGRATIONS, { version: 5, name: "future", sql: "SELECT 1;" }]).close();
+      open(file, [...MIGRATIONS, { version: MIGRATIONS.at(-1)!.version + 2, name: "future", sql: "SELECT 1;" }]).close();
       expect(() => new ZeppStore(file, MIGRATIONS)).toThrow(/newer than this server supports/);
     } finally {
       closeAll();
@@ -83,7 +84,7 @@ describe("migrations", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "zepp-db-"));
     const file = path.join(dir, "zepp.db");
     try {
-      const bad = [...MIGRATIONS, { version: 3, name: "bad", sql: "CREATE TABLE half_done (a INT); SELECT * FROM missing_table_xyz;" }];
+      const bad = [...MIGRATIONS, { version: MIGRATIONS.at(-1)!.version + 1, name: "bad", sql: "CREATE TABLE half_done (a INT); SELECT * FROM missing_table_xyz;" }];
       expect(() => new ZeppStore(file, bad)).toThrow();
       const s = open(file);
       expect(s.schemaVersion()).toBe(MIGRATIONS.at(-1)!.version);
