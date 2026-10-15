@@ -141,6 +141,10 @@ export const DASHBOARD_JS = String.raw`(function () {
   }
   function localTime(iso) { return iso ? fmtZone(iso, { hour: "2-digit", minute: "2-digit", hour12: false }) : "-"; }
   function localDateTime(iso) { return iso ? fmtZone(iso, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }) : "-"; }
+  function typeBadge(w) {
+    if (!w || !w.type_confidence) return null;
+    return h("span", { class: "badge warn", title: "Sport name is a guess from Zepp type number " + (w.zepp_type === undefined || w.zepp_type === null ? "" : w.zepp_type) + " (" + w.type_confidence + ")", text: "inferred" });
+  }
   function typeName(t) { if (!t) return "-"; var x = String(t).replace(/_/g, " "); return x.charAt(0).toUpperCase() + x.slice(1); }
   function dateList(start, end) {
     var out = [], d = new Date(start + "T00:00:00Z"), last = new Date(end + "T00:00:00Z");
@@ -354,7 +358,7 @@ export const DASHBOARD_JS = String.raw`(function () {
         cards.appendChild(card("Hybrid Charge", fmtInt(c.last), "/ 100", when(c.date, o.today) + " | avg " + fmtInt(c.avg) + ", " + fmtInt(c.min) + " - " + fmtInt(c.max), gauge, function () { go("charge"); }));
       } else cards.appendChild(emptyCard("Hybrid Charge", "No Hybrid Charge data"));
       box.appendChild(cards);
-      box.appendChild(w ? card("Last workout", typeName(w.activity_type), "", shortDate(w.started_date) + " " + localTime(w.started_at) + " | " + fmtDur(w.duration_s) + (isNum(w.distance_m) && w.distance_m > 0 ? " | " + fmtKm(w.distance_m) : ""), null, function () { go("workouts/" + encodeURIComponent(w.workout_id)); }) : emptyCard("Last workout", "No workouts yet"));
+      box.appendChild(w ? card("Last workout", typeName(w.activity_type), "", shortDate(w.started_date) + " " + localTime(w.started_at) + " | " + fmtDur(w.duration_s) + (isNum(w.distance_m) && w.distance_m > 0 ? " | " + fmtKm(w.distance_m) : ""), typeBadge(w), function () { go("workouts/" + encodeURIComponent(w.workout_id)); }) : emptyCard("Last workout", "No workouts yet"));
       var days = dateList(t.start, t.end), sp = stepsPoints(t, days);
       box.appendChild(h("div", { class: "grid2" }, [
         panel("Steps, last 30 days", chart({ kind: "bar", points: sp, mean: avg(sp.map(function (p) { return p.v; })), emptyText: "No step data in this range" })),
@@ -494,7 +498,7 @@ export const DASHBOARD_JS = String.raw`(function () {
   }
   function workoutRow(w, selId) {
     return h("a", { class: "wrow" + (w.workout_id === selId ? " sel" : ""), href: "#/workouts/" + encodeURIComponent(w.workout_id) }, [
-      h("div", null, [h("div", { class: "t", text: typeName(w.activity_type) }), h("div", { class: "sub", text: shortDate(w.started_date) + " " + localTime(w.started_at) + (w.strength_sets > 0 ? " | " + w.strength_sets + " sets" : "") })]),
+      h("div", null, [h("div", { class: "t" }, [typeName(w.activity_type), " ", typeBadge(w)]), h("div", { class: "sub", text: shortDate(w.started_date) + " " + localTime(w.started_at) + (w.strength_sets > 0 ? " | " + w.strength_sets + " sets" : "") })]),
       h("div", { class: "r" }, [h("div", { text: fmtDur(w.duration_s) }), h("div", { text: fmtKm(w.distance_m) })])
     ]);
   }
@@ -506,7 +510,7 @@ export const DASHBOARD_JS = String.raw`(function () {
       var w = r.workout;
       pane.appendChild(h("a", { class: "back", href: "#/workouts" }, "< All workouts"));
       pane.appendChild(h("div", { class: "cards" }, [
-        card("Type", typeName(w.activity_type), "", shortDate(w.started_date) + " " + localTime(w.started_at) + " - " + localTime(w.ended_at)),
+        card("Type", typeName(w.activity_type), "", shortDate(w.started_date) + " " + localTime(w.started_at) + " - " + localTime(w.ended_at), typeBadge(w)),
         card("Duration", fmtDur(w.duration_s), "", isNum(w.distance_m) && w.distance_m > 0 ? fmtKm(w.distance_m) : ""),
         card("Heart rate", fmtInt(w.avg_hr_bpm), "bpm avg", "max " + fmtInt(w.max_hr_bpm)),
         card("Energy", fmtInt(w.calories_kcal), "kcal", isNum(w.training_load) ? "load " + fmtInt(w.training_load) : "")

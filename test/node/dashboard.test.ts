@@ -288,7 +288,7 @@ describe("dashboard API (temp database)", () => {
     expect(all.total).toBe(2);
     expect(all.workouts.map((w: any) => w.workout_id)).toEqual(["zepp:1760482800:cnVuLmRldmljZQ", "w-str"]);
     expect(all.workouts[1].strength_sets).toBe(3);
-    expect(all.types).toEqual(expect.arrayContaining([{ type: "outdoor_running", n: 1 }, { type: "strength_training", n: 1 }]));
+    expect(all.types).toEqual(expect.arrayContaining([expect.objectContaining({ type: "outdoor_running", n: 1, type_confidence: null }), expect.objectContaining({ type: "strength_training", n: 1 })]));
     expect((await api("workouts?type=strength_training")).body.workouts).toHaveLength(1);
     const page2 = (await api("workouts?limit=1&offset=1")).body;
     expect(page2.workouts.map((w: any) => w.workout_id)).toEqual(["w-str"]);

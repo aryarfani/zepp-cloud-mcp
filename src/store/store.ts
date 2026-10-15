@@ -8,6 +8,7 @@ import type { StreamAvailability } from "../zepp/event-manifest";
 import type { DailySummary, SleepNight } from "../zepp/types";
 import type { WeightEntry } from "../zepp/weight";
 import type { StrengthSet } from "../zepp/strength";
+import { sportConfidence, sportKey } from "../zepp/sport-catalog";
 import { strengthExerciseName } from "../zepp/strength-exercises";
 import type { WorkoutSummary } from "../zepp/workouts";
 import { MIGRATIONS, type Migration } from "./migrations";
@@ -213,6 +214,30 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       for (const { action_type } of types) {
         const name = strengthExerciseName(Number(action_type));
         changed += Number(update.run(name, action_type, name).changes);
+      }
+      return changed;
+    });
+  }
+
+  /**
+   * Re-derive stored workout labels that were saved as `unknown:<code>` before the sport catalog knew the code.
+   * Only rows still labelled `unknown:<code>` are touched (an explicit title from Zepp is never overwritten), so a second run changes nothing.
+   * Updates both the `activity_type` column and the copy inside `summary_json`. Returns the number of rows updated.
+   */
+  rederiveSportTypes(): number {
+    const rows = this.db.prepare("SELECT DISTINCT zepp_type AS t FROM workouts WHERE zepp_type IS NOT NULL AND activity_type = 'unknown:' || zepp_type").all() as Array<{ t: number }>;
+    const update = this.db.prepare(
+      "UPDATE workouts SET activity_type = ?, summary_json = json_set(CASE WHEN json_valid(summary_json) THEN summary_json ELSE '{}' END, '$.activity_type', ?) WHERE zepp_type = ? AND activity_type = 'unknown:' || zepp_type");
+    const addConfidence = this.db.prepare(
+      "UPDATE workouts SET summary_json = json_set(summary_json, '$.type_confidence', ?) WHERE zepp_type = ? AND activity_type = ? AND json_valid(summary_json)");
+    return this.transaction(() => {
+      let changed = 0;
+      for (const { t } of rows) {
+        const key = sportKey(Number(t));
+        if (!key) continue;
+        changed += Number(update.run(key, key, t).changes);
+        const conf = sportConfidence(Number(t), key);
+        if (conf && conf !== "verified") addConfidence.run(conf, t, key);
       }
       return changed;
     });

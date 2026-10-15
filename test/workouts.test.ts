@@ -32,24 +32,32 @@ describe("workout summary", () => {
 });
 
 describe("sport codes", () => {
-  it("maps the verified cloud type codes", () => {
-    expect(SPORT_CODES).toEqual({
-      1: "outdoor_running",
-      6: "walking",
-      9: "ride",
-      14: "pool_swimming",
-      52: "strength",
-      92: "badminton",
-      130: "cross_training"
-    });
+  it("keeps the codes confirmed on live data", () => {
+    expect(SPORT_CODES).toMatchObject({ 1: "outdoor_running", 6: "walking", 9: "ride", 14: "pool_swimming", 52: "strength", 92: "badminton", 130: "cross_training" });
     const swim = normalizeWorkoutSummary({ trackid: "1700000000", source: "run.device", endTime: 1700000600, type: 14 }, "Asia/Jakarta");
     expect(swim).toMatchObject({ activity_type: "pool_swimming", zepp_type: 14 });
+    expect(swim?.type_confidence).toBeUndefined(); // verified: no badge
   });
 
-  it("keeps unverified codes explicit instead of guessing", () => {
-    for (const type of [8, 10, 16, 22, 24]) {
+  it("names the catalog sports and flags guessed ones with type_confidence", () => {
+    const expected: Array<[number, string, string]> = [[8, "treadmill", "reference"], [10, "indoor_cycling", "reference"], [22, "hiking", "inferred"], [24, "indoor_fitness", "inferred"]];
+    for (const [type, name, confidence] of expected) {
+      const w = normalizeWorkoutSummary({ trackid: "1700000000", source: "run.device", endTime: 1700000600, type }, "Asia/Jakarta");
+      expect(w).toMatchObject({ activity_type: name, zepp_type: type, type_confidence: confidence });
+    }
+  });
+
+  it("keeps uncatalogued codes explicit instead of guessing", () => {
+    for (const type of [11, 105, 999]) {
       const w = normalizeWorkoutSummary({ trackid: "1700000000", source: "run.device", endTime: 1700000600, type }, "Asia/Jakarta");
       expect(w?.activity_type).toBe(`unknown:${type}`);
+      expect(w?.type_confidence).toBeUndefined();
     }
+  });
+
+  it("lets a title sent by Zepp override a guessed catalog name, but not a verified one", () => {
+    const base = { trackid: "1700000000", source: "run.device", endTime: 1700000600 };
+    expect(normalizeWorkoutSummary({ ...base, type: 22, sport_title: "Trail Walk" }, "Asia/Jakarta")).toMatchObject({ activity_type: "trail_walk", zepp_type: 22 });
+    expect(normalizeWorkoutSummary({ ...base, type: 52, sport_title: "Gym" }, "Asia/Jakarta")?.activity_type).toBe("strength");
   });
 });

@@ -50,3 +50,43 @@ describe("rederiveExerciseNames", () => {
     } finally { data.close(); }
   });
 });
+describe("rederiveSportTypes", () => {
+  it("relabels unknown:<code> workouts from the catalog, updates summary_json, and is idempotent", () => {
+    const f = path.join(dir, "sport.db");
+    seedDashboardDb(f);
+    const db = new DatabaseSync(f);
+    const ins = db.prepare("INSERT INTO workouts (workout_id, activity_type, zepp_type, started_at, started_date, ended_at, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, source_scope, summary_json, raw_json, strength_checked, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const u = "2026-10-15T00:00:00Z";
+    ins.run("u22", "unknown:22", 22, "2026-09-20T01:00:00.000Z", "2026-09-20", "2026-09-20T02:00:00.000Z", 3600, 9475, 100, 134, 150, "device", JSON.stringify({ activity_type: "unknown:22", zepp_type: 22 }), "{}", 0, u);
+    ins.run("u24", "unknown:24", 24, "2026-09-21T01:00:00.000Z", "2026-09-21", "2026-09-21T02:00:00.000Z", 1200, null, 50, 120, 130, "device", "not json", "{}", 0, u);
+    ins.run("u105", "unknown:105", 105, "2026-09-22T01:00:00.000Z", "2026-09-22", "2026-09-22T02:00:00.000Z", 1200, null, 50, 120, 130, "device", "{}", "{}", 0, u);
+    ins.run("titled", "unknown:22", 22, "2026-09-23T01:00:00.000Z", "2026-09-23", "2026-09-23T02:00:00.000Z", 1200, null, 50, 120, 130, "device", "{}", "{}", 0, u);
+    db.prepare("UPDATE workouts SET activity_type = 'trail_walk' WHERE workout_id = 'titled'").run();
+    db.close();
+    const store = new ZeppStore(f);
+    try {
+      expect(store.rederiveSportTypes()).toBe(2); // u22 and u24 only
+      expect(store.rederiveSportTypes()).toBe(0);
+    } finally { store.close(); }
+    const ro = new DatabaseSync(f, { readOnly: true });
+    try {
+      const rows = Object.fromEntries((ro.prepare("SELECT workout_id AS id, activity_type AS t, summary_json AS j FROM workouts WHERE workout_id IN ('u22','u24','u105','titled')").all() as any[]).map(r => [r.id, r]));
+      expect(rows.u22.t).toBe("hiking");
+      expect(JSON.parse(rows.u22.j)).toMatchObject({ activity_type: "hiking", zepp_type: 22, type_confidence: "inferred" });
+      expect(rows.u24.t).toBe("indoor_fitness");
+      expect(rows.u105.t).toBe("unknown:105");
+      expect(rows.titled.t).toBe("trail_walk");
+    } finally { ro.close(); }
+    const data = new DashboardData(f, { timezone: "Asia/Jakarta" });
+    try {
+      const w: any = data.workouts({ limit: 50, offset: 0 });
+      const byId = Object.fromEntries(w.workouts.map((x: any) => [x.workout_id, x]));
+      expect(byId.u22).toMatchObject({ activity_type: "hiking", type_confidence: "inferred" });
+      expect(byId.u105.type_confidence).toBeNull();
+      expect(byId["zepp:1760482800:cnVuLmRldmljZQ"].type_confidence).toBeNull(); // verified outdoor_running: no badge
+      expect(byId.titled.type_confidence).toBeNull();
+      expect(w.types.find((x: any) => x.type === "hiking")).toMatchObject({ n: 1, type_confidence: "inferred" });
+      expect((data.workout("u22") as any).workout.type_confidence).toBe("inferred");
+    } finally { data.close(); }
+  });
+});

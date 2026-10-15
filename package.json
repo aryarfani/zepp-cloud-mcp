@@ -12,6 +12,7 @@
     "test:node": "vitest run -c vitest.node.config.ts",
     "sync": "tsx scripts/sync.ts",
     "exercises:rederive": "tsx scripts/rederive-exercises.ts",
+    "labels:rederive": "tsx scripts/rederive-exercises.ts",
     "test:watch": "vitest",
     "test:live": "tsx scripts/live-probe.ts"
   },

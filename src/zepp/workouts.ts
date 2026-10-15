@@ -7,6 +7,7 @@ import { buildZeppRequest } from "./endpoints";
 import { hasStrengthSets } from "./strength";
 import { firstValue, numericValue, objectValue, parseTimestampMs, sourceScope, topLevelKeys } from "./normalize";
 import type { SourceScope } from "./types";
+import { SPORT_CATALOG, sportConfidence, sportKey } from "./sport-catalog";
 
 const TRACK_ID = /^\d{1,32}$/;
 const SOURCE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -16,6 +17,8 @@ export interface WorkoutSummary {
   workout_id: string;
   activity_type: string;
   zepp_type?: number;
+  /** Present only when the sport name is a guess from the type number ("reference" or "inferred"); absent when verified. */
+  type_confidence?: "reference" | "inferred";
   started_at: string;
   ended_at: string;
   duration_s: number;
@@ -78,28 +81,23 @@ function textIn(object: Record<string, unknown>, keys: readonly string[]): strin
   return numeric !== undefined ? String(Math.round(numeric)) : undefined;
 }
 
-// Only codes confirmed against the Zepp cloud `type` field of /v1/sport/run/history.json are listed.
-// Note: these differ from the Zepp OS SDK `subType` table (e.g. there 3 = walking, 6 = pool swimming).
-// 14 was confirmed from live swim data (swolf, total_strokes, swim_pool_length populated).
-export const SPORT_CODES: Readonly<Record<number, string>> = {
-  1: "outdoor_running",
-  6: "walking",
-  9: "ride",
-  14: "pool_swimming",
-  52: "strength",
-  92: "badminton",
-  130: "cross_training"
-};
+// Cloud `type` -> sport key. The table lives in sport-catalog.ts (ZeppBridge, MIT) with a confidence per entry.
+// Note: cloud numbers differ from the Zepp OS SDK `subType` table for low codes (e.g. cloud 6 = walking, SDK 6 = pool swimming).
+export const SPORT_CODES: Readonly<Record<number, string>> = Object.fromEntries(
+  Object.entries(SPORT_CATALOG).map(([code, entry]) => [Number(code), entry[0]])
+);
 
 function normalizeType(object: Record<string, unknown>): { activityType: string; zeppType?: number } {
   const codeValue = numberIn(object, ["type", "sport_mode", "sportType"], 0, 10000);
   const zeppType = codeValue === undefined ? undefined : Math.round(codeValue);
-  if (zeppType !== undefined && SPORT_CODES[zeppType]) return { activityType: SPORT_CODES[zeppType]!, zeppType };
   const explicit = textIn(object, ["workout_type", "sport_title", "sportTitle", "sport_name", "sportName"]);
-  if (explicit) {
-    const activityType = explicit.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "unknown";
-    return zeppType === undefined ? { activityType } : { activityType, zeppType };
+  const explicitType = explicit ? explicit.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "unknown" : undefined;
+  if (zeppType !== undefined) {
+    const key = sportKey(zeppType);
+    // Verified codes always win; a guessed catalog name never overrides a title Zepp sent itself.
+    if (key && (sportConfidence(zeppType) === "verified" || !explicitType)) return { activityType: key, zeppType };
   }
+  if (explicitType) return zeppType === undefined ? { activityType: explicitType } : { activityType: explicitType, zeppType };
   const activityType = zeppType === undefined ? "unknown" : `unknown:${zeppType}`;
   return zeppType === undefined ? { activityType } : { activityType, zeppType };
 }
@@ -151,6 +149,8 @@ export function normalizeWorkoutSummary(raw: unknown, _timezone: string): Workou
     detail_available: true
   };
   if (zeppType !== undefined) result.zepp_type = zeppType;
+  const typeConfidence = sportConfidence(zeppType, activityType);
+  if (typeConfidence && typeConfidence !== "verified") result.type_confidence = typeConfidence;
   const distance = numberIn(object, ["distance_meters", "distanceMeters", "distance", "dis"], 0, 1_000_000);
   const calories = numberIn(object, ["calories", "calorie", "cal"], 0, 100_000);
   const avgHr = numberIn(object, ["avg_hr", "avgHr", "averageHeartRate", "avg_heart_rate", "avgHeartRate"], 20, 250);

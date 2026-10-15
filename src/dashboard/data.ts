@@ -2,6 +2,7 @@
 import { existsSync, statSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { addIsoDays } from "../time";
+import { sportConfidence } from "../zepp/sport-catalog";
 import { strengthExerciseName, strengthExerciseSource } from "../zepp/strength-exercises";
 
 type Row = Record<string, unknown>;
@@ -82,7 +83,8 @@ export class DashboardData {
       const first = this.get("SELECT total FROM charge_samples WHERE date = ? ORDER BY ts_ms ASC LIMIT 1", chargeDate);
       charge = { date: chargeDate, ...agg, first: num(first?.total), last: num(last?.total), mental: num(last?.mental), physical: num(last?.physical), last_at_ms: num(last?.ts_ms) };
     }
-    const workout = this.get("SELECT workout_id, activity_type, started_at, started_date, duration_s, distance_m, calories_kcal, avg_hr_bpm FROM workouts ORDER BY started_at DESC LIMIT 1");
+    const workoutRow = this.get("SELECT workout_id, activity_type, zepp_type, started_at, started_date, duration_s, distance_m, calories_kcal, avg_hr_bpm FROM workouts ORDER BY started_at DESC LIMIT 1");
+    const workout = workoutRow ? this.withConfidence(workoutRow) : workoutRow;
     const weight = this.get("SELECT measured_at, date, weight_kg, bmi FROM weight_records ORDER BY measured_at DESC LIMIT 1");
     const bp = this.get("SELECT measured_at, date, systolic_mmhg, diastolic_mmhg, pulse_bpm FROM blood_pressure ORDER BY measured_at DESC LIMIT 1");
     return {
@@ -160,20 +162,27 @@ export class DashboardData {
     const clause = where.length ? ` WHERE ${where.join(" AND ")}` : "";
     const limit = Math.max(1, Math.min(WORKOUT_PAGE_MAX, opts.limit));
     const rows = this.all(
-      `SELECT workout_id, activity_type, started_at, started_date, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, training_load,
+      `SELECT workout_id, activity_type, zepp_type, started_at, started_date, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, training_load,
               (SELECT COUNT(*) FROM strength_sets s WHERE s.workout_id = w.workout_id) AS strength_sets
          FROM workouts w${clause} ORDER BY started_at DESC LIMIT ? OFFSET ?`, ...params, limit, Math.max(0, opts.offset));
     return {
-      available: true, timezone: this.timezone, workouts: rows,
+      available: true, timezone: this.timezone, workouts: rows.map(r => this.withConfidence(r)),
       total: Number(this.get(`SELECT COUNT(*) AS c FROM workouts${clause}`, ...params)?.c ?? 0),
-      types: this.all("SELECT activity_type AS type, COUNT(*) AS n FROM workouts GROUP BY activity_type ORDER BY n DESC")
+      types: this.all("SELECT activity_type AS type, MIN(zepp_type) AS zepp_type, COUNT(*) AS n FROM workouts GROUP BY activity_type ORDER BY n DESC").map(r => this.withConfidence(r, "type"))
     };
+  }
+
+  /** Adds `type_confidence` ("reference" or "inferred") when the sport name is only a guess from the type number. */
+  private withConfidence(row: Record<string, unknown>, typeKey = "activity_type"): Record<string, unknown> {
+    const code = row.zepp_type === null || row.zepp_type === undefined ? undefined : Number(row.zepp_type);
+    const conf = sportConfidence(code, String(row[typeKey]));
+    return { ...row, type_confidence: conf && conf !== "verified" ? conf : null };
   }
 
   workout(id: string) {
     if (!this.available()) return null;
     const w = this.get(
-      `SELECT workout_id, activity_type, started_at, started_date, ended_at, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, training_load,
+      `SELECT workout_id, activity_type, zepp_type, started_at, started_date, ended_at, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, training_load,
               vo2max_ml_kg_min, strength_checked FROM workouts WHERE workout_id = ?`, id);
     if (!w) return null;
     const sets = this.all("SELECT seq, set_no, action_type, reps, weight_kg, duration_s, avg_hr_bpm FROM strength_sets WHERE workout_id = ? ORDER BY seq", id)
@@ -182,7 +191,7 @@ export class DashboardData {
         const name = strengthExerciseName(actionType);
         return { ...s, exercise: name, known: !name.startsWith("unknown_") };
       });
-    return { timezone: this.timezone, workout: w, sets };
+    return { timezone: this.timezone, workout: this.withConfidence(w), sets };
   }
 
   // ---- weight / exercises / status ----------------------------------------------------------------------------------
