@@ -142,7 +142,7 @@ describe("sync service", () => {
 
 describe("parseSyncConfig", () => {
   it("applies defaults and ignores invalid values", () => {
-    expect(parseSyncConfig({})).toEqual({ enabled: true, hour: 4, backfillDays: 90, recentDays: 7, requestDelayMs: 400, dbPath: "data/zepp.db" });
+    expect(parseSyncConfig({})).toEqual({ enabled: true, hour: 4, backfillDays: 90, recentDays: 7, overlapDays: 2, requestDelayMs: 400, dbPath: "data/zepp.db" });
     expect(parseSyncConfig({ SYNC_ENABLED: "false", SYNC_HOUR: "23", SYNC_BACKFILL_DAYS: "30", ZEPP_DB_PATH: "x/y.db" }))
       .toMatchObject({ enabled: false, hour: 23, backfillDays: 30, dbPath: "x/y.db" });
     expect(parseSyncConfig({ SYNC_HOUR: "24", SYNC_BACKFILL_DAYS: "-5", SYNC_RECENT_DAYS: "abc", SYNC_REQUEST_DELAY_MS: "1.5" }))

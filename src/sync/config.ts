@@ -4,11 +4,13 @@ export interface SyncConfig {
   hour: number;
   backfillDays: number;
   recentDays: number;
+  /** Days re-fetched before the last successful run's end date. */
+  overlapDays: number;
   requestDelayMs: number;
   dbPath: string;
 }
 
-export const SYNC_DEFAULTS = { enabled: true, hour: 4, backfillDays: 90, recentDays: 7, requestDelayMs: 400, dbPath: "data/zepp.db" } as const;
+export const SYNC_DEFAULTS = { enabled: true, hour: 4, backfillDays: 90, recentDays: 7, overlapDays: 2, requestDelayMs: 400, dbPath: "data/zepp.db" } as const;
 export const MAX_BACKFILL_DAYS = 730;
 
 function int(value: string | undefined, fallback: number, min: number, max: number): number {
@@ -22,13 +24,14 @@ function bool(value: string | undefined, fallback: boolean): boolean {
   return !["0", "false", "no", "off"].includes(value.trim().toLowerCase());
 }
 
-/** Reads SYNC_ENABLED, SYNC_HOUR, SYNC_BACKFILL_DAYS, SYNC_RECENT_DAYS, SYNC_REQUEST_DELAY_MS and ZEPP_DB_PATH. Invalid values fall back to defaults. */
+/** Reads SYNC_ENABLED, SYNC_HOUR, SYNC_BACKFILL_DAYS, SYNC_RECENT_DAYS, SYNC_OVERLAP_DAYS, SYNC_REQUEST_DELAY_MS and ZEPP_DB_PATH. Invalid values fall back to defaults. */
 export function parseSyncConfig(env: Record<string, string | undefined>): SyncConfig {
   return {
     enabled: bool(env.SYNC_ENABLED, SYNC_DEFAULTS.enabled),
     hour: int(env.SYNC_HOUR, SYNC_DEFAULTS.hour, 0, 23),
     backfillDays: int(env.SYNC_BACKFILL_DAYS, SYNC_DEFAULTS.backfillDays, 1, MAX_BACKFILL_DAYS),
     recentDays: int(env.SYNC_RECENT_DAYS, SYNC_DEFAULTS.recentDays, 1, 60),
+    overlapDays: int(env.SYNC_OVERLAP_DAYS, SYNC_DEFAULTS.overlapDays, 0, 14),
     requestDelayMs: int(env.SYNC_REQUEST_DELAY_MS, SYNC_DEFAULTS.requestDelayMs, 0, 10_000),
     dbPath: env.ZEPP_DB_PATH?.trim() || SYNC_DEFAULTS.dbPath
   };

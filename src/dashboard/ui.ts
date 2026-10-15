@@ -201,7 +201,22 @@ svg.route{position:absolute;inset:0;width:100%;height:100%;display:block;pointer
 .pbar .fill{height:100%;width:0;border-radius:3px;background:var(--grad);transition:width .3s}
 .pbar.ind .fill{position:absolute;width:35%;animation:indet 1.3s ease-in-out infinite}
 @keyframes indet{0%{left:-35%}100%{left:100%}}
-.synprog{margin-top:6px}
+.stepper{display:flex;list-style:none;margin:18px 0 6px;padding:0}
+.stepper .step{flex:1 1 0;min-width:0;position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.stepper .step::before{content:"";position:absolute;top:12px;right:50%;width:100%;height:2px;background:var(--line2)}
+.stepper .step:first-child::before{display:none}
+.stepper .step.done::before,.stepper .step.cur::before{background:var(--good)}
+.sdot{position:relative;z-index:1;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--panel2);border:2px solid var(--line2);color:var(--faint);font-size:.7rem;font-weight:650}
+.sdot svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:3}
+.step.done .sdot{background:var(--good);border-color:var(--good);color:#071210}
+.step.cur .sdot{background:#3b82f6;border-color:#3b82f6;color:#fff;animation:stepPulse 1.5s ease-out infinite}
+@keyframes stepPulse{0%{box-shadow:0 0 0 0 rgba(59,130,246,.55)}100%{box-shadow:0 0 0 10px rgba(59,130,246,0)}}
+.slbl{font-size:.7rem;line-height:1.25;color:var(--faint);overflow-wrap:anywhere;padding:0 2px}
+.step.done .slbl{color:var(--muted)}.step.cur .slbl{color:var(--text);font-weight:600}
+.stepline{margin-top:12px;font-weight:600;font-size:.9rem}
+.stepsub,.steplast{margin-top:2px}
+@media (max-width:700px){.stepper{margin-bottom:34px}.stepper .slbl{display:none}.stepper .step.cur .slbl{display:block;position:absolute;top:34px;left:50%;transform:translateX(-50%);white-space:nowrap}.stepper .step:first-child.cur .slbl{left:0;transform:none}.stepper .step:last-child.cur .slbl{left:auto;right:0;transform:none}}
+@media (prefers-reduced-motion:reduce){.step.cur .sdot{animation:none}}
 .synmsg{margin-top:10px;font-size:.84rem;min-height:1.2em}
 .synmsg.ok{color:var(--good)}.synmsg.bad{color:var(--bad)}
 @media (prefers-reduced-motion:reduce){.syncbtn .spin,.pbar.ind .fill{animation-duration:3s}}
@@ -717,36 +732,55 @@ export const DASHBOARD_JS = String.raw`(function () {
     });
   }
 
-  // "Sync now": starts the server's normal sync for its fixed recent window (the page sends no dates), then polls the status.
+  // "Sync now": starts the server's normal sync (the server picks the window: last success minus the overlap; the page sends no dates), then polls the status
+  // and shows the step stepper from the progress the sync reports.
   var SYNC_POLL_MS = 2000;
   function syncControl(box, token, st) {
     var sy = st.sync;
     if (!sy || sy.manual_available === false) return null;
-    var days = isNum(sy.recent_days) ? sy.recent_days : null;
+    var overlap = isNum(sy.overlap_days) ? sy.overlap_days : null;
     var ui = state.syncUi || (state.syncUi = { msg: null, timer: 0 });
     var btn = h("button", { type: "button", "class": "syncbtn primary" });
     var spin = h("span", { "class": "spin", "aria-hidden": "true" });
     var label = h("span", { "class": "lbl" });
     btn.appendChild(ico("refresh")); btn.appendChild(spin); btn.appendChild(label);
-    var hint = h("div", { "class": "sub synchint", text: days ? "Fetches the last " + days + (days === 1 ? " day" : " days") : "Fetches the most recent days" });
+    var hint = h("div", { "class": "sub synchint", text: overlap !== null ? "Fetches since the last sync (+" + overlap + (overlap === 1 ? " day" : " days") + " overlap)" : "Fetches new data since the last sync" });
     var fill = h("div", { "class": "fill" });
     var bar = h("div", { "class": "pbar ind hidden", role: "progressbar", "aria-label": "Sync progress" }, fill);
-    var prog = h("div", { "class": "sub synprog hidden" });
+    var stepper = h("ol", { "class": "stepper hidden", "aria-label": "Sync steps" });
+    var stepLine = h("div", { "class": "stepline hidden" });
+    var stepSub = h("div", { "class": "sub stepsub hidden" });
+    var lastLine = h("div", { "class": "sub steplast hidden" });
+    var stepSig = "";
     var msg = h("div", { "class": "synmsg", role: "status", "aria-live": "polite" });
-    var wrap = h("div", { "class": "syncctl" }, [h("div", { "class": "synctop" }, [btn, hint]), bar, prog, msg]);
+    var wrap = h("div", { "class": "syncctl" }, [h("div", { "class": "synctop" }, [btn, hint]), stepper, stepLine, stepSub, lastLine, bar, msg]);
     function showMsg(kind, text) { ui.msg = text ? { kind: kind, text: text } : null; msg.textContent = text || ""; msg.className = "synmsg" + (text ? " " + kind : ""); }
     function paint(running, progress) {
       btn.disabled = running; btn.setAttribute("aria-busy", running ? "true" : "false");
       btn.classList.toggle("busy", running);
       label.textContent = running ? "Syncing\u2026" : "Sync now";
-      bar.classList.toggle("hidden", !running); prog.classList.toggle("hidden", !running || !progress);
-      var det = running && progress && isNum(progress.done) && isNum(progress.total) && progress.total > 0;
-      bar.classList.toggle("ind", !det);
-      if (det) {
-        var pct = Math.round(progress.done / progress.total * 100);
-        fill.style.width = pct + "%"; bar.setAttribute("aria-valuemin", "0"); bar.setAttribute("aria-valuemax", String(progress.total)); bar.setAttribute("aria-valuenow", String(progress.done));
-        prog.textContent = "Day " + progress.done + " of " + progress.total;
-      } else { fill.style.width = ""; bar.removeAttribute("aria-valuenow"); prog.textContent = ""; }
+      var steps = running && progress && progress.steps && progress.steps.length ? progress.steps : null;
+      bar.classList.toggle("hidden", !running || !!steps); // no progress reported (yet): an indeterminate bar, nothing invented
+      [stepper, stepLine, stepSub, lastLine].forEach(function (el) { el.classList.toggle("hidden", !steps); });
+      if (!steps) { stepSig = ""; return; }
+      var sig = steps.map(function (x) { return x.id; }).join(",");
+      if (sig !== stepSig) {
+        stepSig = sig; clear(stepper);
+        steps.forEach(function (x) {
+          stepper.appendChild(h("li", { "class": "step" }, [h("span", { "class": "sdot", "aria-hidden": "true" }), h("span", { "class": "slbl", text: x.label })]));
+        });
+      }
+      var cur = progress.current;
+      [].forEach.call(stepper.children, function (li, i) {
+        li.className = "step " + (i < cur ? "done" : i === cur ? "cur" : "pend");
+        if (i === cur) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+        var dot = li.firstChild; clear(dot);
+        if (i < cur) dot.appendChild(ico("check")); else dot.textContent = String(i + 1);
+      });
+      stepLine.textContent = "Step " + (cur + 1) + " of " + steps.length + ": " + steps[cur].label + (progress.chunk ? " (window " + progress.chunk.index + " of " + progress.chunk.total + ")" : "");
+      var since = progress.window_start ? shortDate(progress.window_start) : "";
+      stepSub.textContent = "Fetching since " + since + (progress.mode === "backfill" ? " (first sync backfill)" : progress.mode === "overlap" ? " (last sync + " + (isNum(progress.overlap_days) ? progress.overlap_days : 2) + " days overlap)" : "");
+      lastLine.textContent = "Last sync: " + (st.last_success && st.last_success.finished_at ? localDateTime(st.last_success.finished_at) : "never");
     }
     function stop() { if (ui.timer) { clearTimeout(ui.timer); ui.timer = 0; } }
     function done() {

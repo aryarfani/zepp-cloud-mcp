@@ -147,7 +147,7 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
     if (!isSameOriginPost(request, url.origin)) return json({ error: "Cross-origin request rejected" }, 403);
     const sent = request.headers.get("x-csrf-token") ?? "";
     if (!sent || !(await safeEqual(sent, await (await sessions()).csrfToken(sid)))) return json({ error: "Invalid CSRF token" }, 403);
-    // The window is fixed on the server (SYNC_RECENT_DAYS). Nothing the caller sends is read, so reject anything that tries.
+    // The window is chosen on the server (last success minus SYNC_OVERLAP_DAYS, or the backfill). Nothing the caller sends is read, so reject anything that tries.
     const body = await request.arrayBuffer();
     if (url.search || body.byteLength > 0) return json({ error: "This endpoint takes no parameters" }, 400);
     if (!opts.startSync) return json({ error: "Manual sync is not available" }, 503);
@@ -230,19 +230,39 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
     }
   }
 
+  const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+  function safeProgress(raw: unknown): unknown {
+    const p = raw as Record<string, unknown> | null | undefined;
+    if (!p || !Array.isArray(p.steps) || p.steps.length < 1 || p.steps.length > 12) return null;
+    const steps = (p.steps as Array<Record<string, unknown>>).map(x => ({ id: String(x?.id ?? "").slice(0, 24), label: String(x?.label ?? "").slice(0, 40) }));
+    if (steps.some(x => !/^[a-z_]+$/.test(x.id) || !x.label)) return null;
+    const current = p.current;
+    if (!Number.isInteger(current) || (current as number) < 0 || (current as number) >= steps.length) return null;
+    if (typeof p.window_start !== "string" || !ISO_DAY.test(p.window_start) || typeof p.window_end !== "string" || !ISO_DAY.test(p.window_end)) return null;
+    const mode = p.mode === "backfill" || p.mode === "overlap" || p.mode === "override" ? p.mode : null;
+    if (!mode) return null;
+    const chunk = p.chunk as { index?: unknown; total?: unknown } | undefined;
+    return {
+      steps, current, total: steps.length, window_start: p.window_start, window_end: p.window_end, mode,
+      since: typeof p.since === "string" && ISO_DAY.test(p.since) ? p.since : null,
+      overlap_days: Number.isInteger(p.overlap_days) && (p.overlap_days as number) >= 0 && (p.overlap_days as number) <= 30 ? p.overlap_days : null,
+      chunk: chunk && Number.isInteger(chunk.index) && Number.isInteger(chunk.total) && (chunk.total as number) > 1 && (chunk.total as number) < 400 ? { index: chunk.index, total: chunk.total } : null
+    };
+  }
+
   function safeStatus(provider: () => unknown): unknown {
     try {
       const s = provider() as Record<string, unknown>;
       // Only the schedule/state bits; never file paths or settings.
       const schedule = (s.schedule ?? {}) as Record<string, unknown>;
       const settings = (s.settings ?? {}) as Record<string, unknown>;
-      const progress = (s.progress ?? null) as { done?: unknown; total?: unknown } | null;
       return {
         enabled: s.enabled ?? null, running: s.running ?? null, next_run_at: schedule.next_run_at ?? null, local_hour: schedule.local_hour ?? null,
         recent_days: Number.isInteger(settings.recent_days) ? settings.recent_days : null,
+        overlap_days: Number.isInteger(settings.overlap_days) ? settings.overlap_days : null,
         manual_available: opts.startSync ? true : false,
-        // only a real, sync-reported progress is passed on; the UI shows an indeterminate bar otherwise
-        progress: progress && Number.isInteger(progress.done) && Number.isInteger(progress.total) && (progress.total as number) > 0 && (progress.done as number) >= 0 && (progress.done as number) <= (progress.total as number) ? { done: progress.done, total: progress.total } : null
+        // only a real, sync-reported progress is passed on, rebuilt field by field (labels and dates only); the UI shows an indeterminate bar otherwise
+        progress: s.running ? safeProgress(s.progress) : null
       };
     } catch { return undefined; }
   }

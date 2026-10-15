@@ -13,10 +13,18 @@ import { fetchWeightEntries } from "../zepp/weight";
 import { fetchWorkoutHistoryWithRaw, fetchWorkoutRaw } from "../zepp/workouts";
 import { EMPTY_COUNTS, type SyncRunCounts, type SyncTrigger, type ZeppStore } from "../store/store";
 import { fetchAndStoreAnalysis } from "./details";
+import { enabledSteps, type SyncProgress, type SyncStepId } from "./progress";
+import { computeSyncWindow, type SyncWindowMode } from "./window";
 
 export interface SyncOptions {
   backfillDays: number;
   recentDays: number;
+  /** Days re-fetched before the last successful run's end date (default 2): late-arriving data and a partial last day get corrected. */
+  overlapDays?: number;
+  /** Test/ops hook: steps to leave out of the run (and out of the reported progress). Not configurable from the environment. */
+  skipSteps?: ReadonlySet<string>;
+  /** Called whenever the run moves to another step, with the ordered step list. Must not throw; errors are swallowed. */
+  onProgress?: (progress: SyncProgress) => void;
   /** Pause between consecutive Zepp requests. */
   requestDelayMs: number;
   /** Days per upstream request window (Zepp ranges are capped at 31 days). */
@@ -32,6 +40,8 @@ export interface SyncResult {
   ok: boolean;
   status: string;
   range: { start: string; end: string };
+  /** How the window was chosen: first-run backfill, last success minus overlap, or an explicit days override. */
+  window: { mode: SyncWindowMode; days: number; since: string | null; truncated: boolean };
   counts: SyncRunCounts;
   duration_ms: number;
   error?: { kind: string; message: string };
@@ -78,10 +88,24 @@ export async function runSync(
   const chunkDays = Math.max(1, Math.min(31, options.chunkDays ?? 14));
   const startedMs = now();
 
-  const firstRun = !store.lastSuccessfulRun();
-  const days = Math.max(1, override.days ?? (firstRun ? options.backfillDays : options.recentDays));
-  const end = localDateFromMs(startedMs, tz);
-  const start = addIsoDays(end, -(days - 1));
+  const lastSuccess = store.lastSuccessfulRun();
+  const overlapDays = options.overlapDays ?? 2;
+  const win = computeSyncWindow({
+    today: localDateFromMs(startedMs, tz), lastSuccessEnd: lastSuccess?.range_end, backfillDays: options.backfillDays,
+    recentDays: options.recentDays, overlapDays, overrideDays: override.days
+  });
+  const { start, end, days } = win;
+  const firstRun = win.mode === "backfill";
+  const steps = enabledSteps(options);
+  const stepOn = (id: SyncStepId) => steps.some(x => x.id === id);
+  let chunk: SyncProgress["chunk"];
+  const report = (id: SyncStepId) => {
+    const current = steps.findIndex(x => x.id === id);
+    if (current < 0 || !options.onProgress) return;
+    try {
+      options.onProgress({ steps, current, window_start: start, window_end: end, mode: win.mode, since: win.since, overlap_days: overlapDays, ...(chunk ? { chunk } : {}) });
+    } catch { /* progress is informational only */ }
+  };
   const runId = store.startRun(trigger, start, end, new Date(startedMs).toISOString());
   const counts: SyncRunCounts = { ...EMPTY_COUNTS };
   let upstreamCalls = 0;
@@ -94,62 +118,89 @@ export async function runSync(
       throw e;
     }
   };
-  log(`sync ${trigger} #${runId}: ${start}..${end} (${days} days${firstRun ? ", backfill" : ""})`);
+  log(`sync ${trigger} #${runId}: ${start}..${end} (${days} days, ${win.mode}${win.truncated ? ", gap longer than the window cap" : ""})`);
 
   let failure: { kind: string; message: string } | undefined;
   try {
     // Newest window first, so the most useful data lands first if a long backfill is cut short.
-    for (const { startDate: windowStart, endDate: windowEnd } of splitDateRange(start, end, chunkDays, true)) {
+    const windows = splitDateRange(start, end, chunkDays, true);
+    let windowNo = 0;
+    for (const { startDate: windowStart, endDate: windowEnd } of windows) {
+      windowNo++;
+      chunk = windows.length > 1 ? { index: windowNo, total: windows.length } : undefined;
       const range = parseDateRange(windowStart, windowEnd, tz);
 
-      await pause();
-      // One band_data request carries both daily summaries and sleep; sleep needs the previous day to catch overnight sessions.
-      const band = await fetchBandData(ctx, previousIsoDate(windowStart), windowEnd, tz, "sync-band");
-      const stamp = new Date(now()).toISOString();
-      counts.daily += store.upsertDaily(band.daily.filter(d => d.date >= windowStart && d.date <= windowEnd), stamp);
-      counts.sleep += store.upsertSleep(selectSleepForRange(band.sleep, range), stamp);
-
-      await pause();
-      const history = await fetchWorkoutHistoryWithRaw(ctx, range, 200);
-      for (const { summary, raw } of history) {
-        store.upsertWorkout(summary, localDateFromMs(Date.parse(summary.started_at), tz), raw, new Date(now()).toISOString());
-        counts.workouts++;
-        if (summary.zepp_type !== STRENGTH_ZEPP_TYPE || store.isStrengthChecked(summary.workout_id)) continue;
+      if (stepOn("daily_sleep")) {
+        report("daily_sleep");
         await pause();
-        try {
-          const detail = await fetchWorkoutRaw(ctx, summary.workout_id);
-          const parsed = parseStrengthLap(detail.lap);
-          counts.strength_sets += store.replaceStrengthSets(summary.workout_id, parsed.sets);
-          if (parsed.malformed) counts.warnings++;
-        } catch (e) {
-          // A single unreadable workout detail must not abort the run; it stays unchecked and is retried next sync.
-          if (e instanceof ZeppError && !FATAL_KINDS.has(e.kind)) { counts.warnings++; log(`strength detail skipped (${e.kind})`); continue; }
-          throw e;
+        // One band_data request carries both daily summaries and sleep; sleep needs the previous day to catch overnight sessions.
+        const band = await fetchBandData(ctx, previousIsoDate(windowStart), windowEnd, tz, "sync-band");
+        const stamp = new Date(now()).toISOString();
+        counts.daily += store.upsertDaily(band.daily.filter(d => d.date >= windowStart && d.date <= windowEnd), stamp);
+        counts.sleep += store.upsertSleep(selectSleepForRange(band.sleep, range), stamp);
+      }
+
+      if (stepOn("workouts") || stepOn("strength")) {
+        if (stepOn("workouts")) report("workouts");
+        await pause();
+        const history = await fetchWorkoutHistoryWithRaw(ctx, range, 200);
+        const pendingStrength: string[] = [];
+        for (const { summary, raw } of history) {
+          store.upsertWorkout(summary, localDateFromMs(Date.parse(summary.started_at), tz), raw, new Date(now()).toISOString());
+          counts.workouts++;
+          if (summary.zepp_type === STRENGTH_ZEPP_TYPE && !store.isStrengthChecked(summary.workout_id)) pendingStrength.push(summary.workout_id);
+        }
+        if (stepOn("strength")) {
+          report("strength");
+          for (const workoutId of pendingStrength) {
+            await pause();
+            try {
+              const detail = await fetchWorkoutRaw(ctx, workoutId);
+              const parsed = parseStrengthLap(detail.lap);
+              counts.strength_sets += store.replaceStrengthSets(workoutId, parsed.sets);
+              if (parsed.malformed) counts.warnings++;
+            } catch (e) {
+              // A single unreadable workout detail must not abort the run; it stays unchecked and is retried next sync.
+              if (e instanceof ZeppError && !FATAL_KINDS.has(e.kind)) { counts.warnings++; log(`strength detail skipped (${e.kind})`); continue; }
+              throw e;
+            }
+          }
         }
       }
 
-      await optionalStep("hybrid charge", async () => {
-        await pause();
-        const samples = await fetchChargeSamples(ctx, range);
-        await pause();
-        const insights = await fetchChargeInsights(ctx, range);
-        counts.charge_samples += store.upsertChargeSamples(samples);
-        counts.charge_insights += store.upsertChargeInsights(insights);
-      });
-      await optionalStep("emotion events", async () => {
-        const { entries, skipped } = await fetchEmotionEntries(ctx, range, pause);
-        counts.emotion_events += store.upsertEmotion(entries, new Date(now()).toISOString());
-        if (skipped) counts.warnings++;
-      });
-      await optionalStep("blood pressure", async () => {
-        const { entries, skipped } = await fetchBloodPressureEntries(ctx, range, pause);
-        counts.blood_pressure += store.upsertBloodPressure(entries, new Date(now()).toISOString());
-        if (skipped) counts.warnings++;
-      });
+      if (stepOn("charge")) {
+        report("charge");
+        await optionalStep("hybrid charge", async () => {
+          await pause();
+          const samples = await fetchChargeSamples(ctx, range);
+          await pause();
+          const insights = await fetchChargeInsights(ctx, range);
+          counts.charge_samples += store.upsertChargeSamples(samples);
+          counts.charge_insights += store.upsertChargeInsights(insights);
+        });
+      }
+      if (stepOn("emotion")) {
+        report("emotion");
+        await optionalStep("emotion events", async () => {
+          const { entries, skipped } = await fetchEmotionEntries(ctx, range, pause);
+          counts.emotion_events += store.upsertEmotion(entries, new Date(now()).toISOString());
+          if (skipped) counts.warnings++;
+        });
+      }
+      if (stepOn("blood_pressure")) {
+        report("blood_pressure");
+        await optionalStep("blood pressure", async () => {
+          const { entries, skipped } = await fetchBloodPressureEntries(ctx, range, pause);
+          counts.blood_pressure += store.upsertBloodPressure(entries, new Date(now()).toISOString());
+          if (skipped) counts.warnings++;
+        });
+      }
     }
+    chunk = undefined;
 
     // Workout detail (pace/heart-rate series, splits, route) for runs, walks, rides and the like; a few per run so a backfill never hammers Zepp.
-    await optionalStep("workout details", async () => {
+    if (stepOn("routes")) report("routes");
+    if (stepOn("routes")) await optionalStep("workout details", async () => {
       const missing = store.missingAnalysisIds(addIsoDays(end, -(DETAIL_BACKFILL_DAYS - 1)), MAX_DETAILS_PER_RUN);
       let stored = 0;
       for (const workoutId of missing) {
@@ -171,14 +222,16 @@ export async function runSync(
 
     // Weigh-ins are sparse: one request (up to 300 records) for the whole run window.
     const fullRange = parseDateRange(start, end, tz, 366);
-    await optionalStep("weight", async () => {
+    if (stepOn("weight")) report("weight");
+    if (stepOn("weight")) await optionalStep("weight", async () => {
       await pause();
       const { entries, skipped } = await fetchWeightEntries(ctx, fullRange.fromSec, fullRange.toSec);
       counts.weight += store.upsertWeight(entries, new Date(now()).toISOString());
       if (skipped) counts.warnings++;
     });
     // Which event streams exist / have data (discovery); one tiny request per stream.
-    await optionalStep("event streams", async () => {
+    if (stepOn("streams")) report("streams");
+    if (stepOn("streams")) await optionalStep("event streams", async () => {
       const manifest = await probeStreams(ctx, MANIFEST_WINDOW_DAYS, now(), pause);
       counts.event_streams += store.upsertEventStreams(manifest.streams, manifest.window_days, manifest.checked_at);
     });
@@ -193,7 +246,7 @@ export async function runSync(
   store.finishRun(runId, { ok, status, counts, ...(failure ? { error_kind: failure.kind, error_message: failure.message } : {}) }, new Date(finishedMs).toISOString());
   log(`sync #${runId} ${status}: daily ${counts.daily}, sleep ${counts.sleep}, workouts ${counts.workouts}, strength sets ${counts.strength_sets}, weight ${counts.weight}, bp ${counts.blood_pressure}, charge ${counts.charge_samples}/${counts.charge_insights}, emotion ${counts.emotion_events}, streams ${counts.event_streams}, warnings ${counts.warnings}, ${finishedMs - startedMs} ms`);
   return {
-    run_id: runId, trigger, ok, status, range: { start, end }, counts, duration_ms: finishedMs - startedMs,
+    run_id: runId, trigger, ok, status, range: { start, end }, window: { mode: win.mode, days, since: win.since, truncated: win.truncated }, counts, duration_ms: finishedMs - startedMs,
     ...(failure ? { error: failure } : {})
   };
 }

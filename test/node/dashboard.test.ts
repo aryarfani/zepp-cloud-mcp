@@ -345,7 +345,7 @@ describe("dashboard API (temp database)", () => {
     expect(cov.charge_samples.rows).toBe(13);
     expect(cov.blood_pressure.rows).toBe(0);
     expect(body.strength_sets).toBe(3);
-    expect(body.sync).toEqual({ enabled: true, running: false, next_run_at: "2026-10-16T21:00:00.000Z", local_hour: 4, recent_days: null, manual_available: false, progress: null });
+    expect(body.sync).toEqual({ enabled: true, running: false, next_run_at: "2026-10-16T21:00:00.000Z", local_hour: 4, recent_days: null, overlap_days: null, manual_available: false, progress: null });
     expect(JSON.stringify(body)).not.toContain("/secret/path.db");
   });
 

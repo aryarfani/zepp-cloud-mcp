@@ -20,7 +20,7 @@ beforeAll(() => { dir = mkdtempSync(path.join(tmpdir(), "zepp-sync-now-")); file
 afterAll(() => { for (const d of opened) d.close(); rmSync(dir, { recursive: true, force: true }); });
 
 /** A fake sync routine standing in for the real one: it writes a sync_runs row like the real one and flips `running`. */
-function fakeSync(opts: { ok?: boolean; progress?: { done: number; total: number } | null; running?: boolean; withStart?: boolean } = {}) {
+function fakeSync(opts: { ok?: boolean; progress?: any; running?: boolean; withStart?: boolean } = {}) {
   const f = { running: !!opts.running, started: 0, progress: opts.progress ?? null, ok: opts.ok ?? true,
     finish() {
       const db = new DatabaseSync(file);
@@ -28,7 +28,7 @@ function fakeSync(opts: { ok?: boolean; progress?: { done: number; total: number
         .run("manual", "2026-10-15T14:00:00Z", "2026-10-15T14:00:09Z", f.ok ? 1 : 0, f.ok ? "ok" : "error", "2026-10-09", "2026-10-15", 7, f.ok ? null : "upstream");
       db.close(); f.running = false;
     } };
-  const status = () => ({ enabled: true, running: f.running, schedule: { next_run_at: "2026-10-16T21:00:00.000Z", local_hour: 4 }, settings: { recent_days: 7 }, ...(f.progress ? { progress: f.progress } : {}) });
+  const status = () => ({ enabled: true, running: f.running, schedule: { next_run_at: "2026-10-16T21:00:00.000Z", local_hour: 4 }, settings: { recent_days: 7, overlap_days: 2 }, ...(f.progress ? { progress: f.progress } : {}) });
   const startSync = () => { if (f.running) return "running" as const; f.running = true; f.started++; return "started" as const; };
   return { f, status, ...(opts.withStart === false ? {} : { startSync }) };
 }
@@ -61,7 +61,7 @@ async function boot(sync: ReturnType<typeof fakeSync>) {
 }
 
 describe("Sync tab: Sync now", () => {
-  it("shows a primary button with the 7-day hint, and the existing status panels", async () => {
+  it("shows a primary button with the since-last-sync hint, and the existing status panels", async () => {
     const { doc, errors } = await boot(fakeSync());
     const btn = doc.querySelector(".syncbtn");
     expect(btn).toBeTruthy();
@@ -69,7 +69,7 @@ describe("Sync tab: Sync now", () => {
     expect(btn.disabled).toBe(false);
     expect(btn.classList.contains("primary")).toBe(true);
     expect(btn.querySelector("svg")).toBeTruthy(); // refresh icon
-    expect(text(doc.querySelector(".synchint"))).toBe("Fetches the last 7 days");
+    expect(text(doc.querySelector(".synchint"))).toBe("Fetches since the last sync (+2 days overlap)");
     expect(doc.querySelector(".pbar:not(.hidden)")).toBeNull();
     expect(text(doc.getElementById("view"))).toContain("Recent runs");
     expect(errors).toEqual([]);
@@ -119,17 +119,74 @@ describe("Sync tab: Sync now", () => {
     expect(doc.querySelector(".syncbtn").disabled).toBe(false);
   }, 15000);
 
-  it("starts in the running state when a sync is already in progress, with real progress if the sync reports it", async () => {
-    const { doc } = await boot(fakeSync({ running: true, progress: { done: 3, total: 7 } }));
+  const STEPS = ["Daily & sleep", "Workouts", "Strength", "Hybrid Charge", "Emotion", "Blood pressure", "Routes (workout details)", "Weight", "Streams"]
+    .map((label, i) => ({ id: ["daily_sleep", "workouts", "strength", "charge", "emotion", "blood_pressure", "routes", "weight", "streams"][i], label }));
+  const progress = (current: number, over: any = {}) => ({ steps: STEPS, current, window_start: "2026-10-13", window_end: "2026-10-15", mode: "overlap", since: "2026-10-15", overlap_days: 2, ...over });
+
+  it("starts in the running state when a sync is already in progress, with the step stepper from the reported progress", async () => {
+    const { doc } = await boot(fakeSync({ running: true, progress: progress(3) }));
     const btn = doc.querySelector(".syncbtn");
     expect(btn.disabled).toBe(true);
     expect(text(btn)).toBe("Syncing…");
+    expect(doc.querySelector(".pbar").classList.contains("hidden")).toBe(true); // the indeterminate bar is only the fallback
+    const items = [...doc.querySelectorAll(".stepper li")] as Element[];
+    expect(items.length).toBe(9);
+    expect(items.map(li => text(li.querySelector(".slbl")))).toEqual(STEPS.map(x => x.label));
+    expect(items.map(li => li.className)).toEqual(["step done", "step done", "step done", "step cur", "step pend", "step pend", "step pend", "step pend", "step pend"]);
+    expect(items[0].querySelector("svg")).toBeTruthy(); // check mark on done steps
+    expect(text(items[4].querySelector(".sdot"))).toBe("5");
+    expect(items[3].getAttribute("aria-current")).toBe("step");
+    expect(text(doc.querySelector(".stepline"))).toBe("Step 4 of 9: Hybrid Charge");
+    expect(text(doc.querySelector(".stepsub"))).toBe("Fetching since 13 Oct (last sync + 2 days overlap)");
+    expect(text(doc.querySelector(".steplast"))).toMatch(/^Last sync: \d{2} \w{3}, \d{2}:\d{2}$/);
+  });
+
+  it("says first sync backfill, and shows the window number for chunked windows", async () => {
+    const { doc } = await boot(fakeSync({ running: true, progress: progress(1, { mode: "backfill", since: null, window_start: "2026-07-18", chunk: { index: 2, total: 7 } }) }));
+    expect(text(doc.querySelector(".stepsub"))).toBe("Fetching since 18 Jul (first sync backfill)");
+    expect(text(doc.querySelector(".stepline"))).toBe("Step 2 of 9: Workouts (window 2 of 7)");
+  });
+
+  it("falls back to the indeterminate bar when the sync reports no (or unusable) progress", async () => {
+    const { doc } = await boot(fakeSync({ running: true, progress: { steps: [{ id: "bad id", label: "x" }], current: 0, window_start: "x" } }));
+    expect(doc.querySelector(".stepper").classList.contains("hidden")).toBe(true);
     const bar = doc.querySelector(".pbar");
-    expect(bar.classList.contains("ind")).toBe(false);
-    expect(bar.getAttribute("aria-valuenow")).toBe("3");
-    expect(bar.getAttribute("aria-valuemax")).toBe("7");
-    expect(bar.querySelector(".fill").style.width).toBe("43%");
-    expect(text(doc.querySelector(".synprog"))).toBe("Day 3 of 7");
+    expect(bar.classList.contains("hidden")).toBe(false);
+    expect(bar.classList.contains("ind")).toBe(true);
+  });
+
+  it("advances the stepper while polling, without rebuilding the steps, and hides it when the run ends", async () => {
+    const sync = fakeSync({ running: true, progress: progress(0) });
+    const { doc } = await boot(sync);
+    const first = doc.querySelector(".stepper li");
+    expect(text(doc.querySelector(".stepline"))).toBe("Step 1 of 9: Daily & sleep");
+    sync.f.progress = progress(5);
+    await wait(2500);
+    expect(text(doc.querySelector(".stepline"))).toBe("Step 6 of 9: Blood pressure");
+    expect(doc.querySelector(".stepper li")).toBe(first); // same elements, classes updated (keeps the pulse animation steady)
+    expect([...doc.querySelectorAll(".stepper li.done")].length).toBe(5);
+    sync.f.progress = null; sync.f.finish();
+    await wait(2500);
+    expect(doc.querySelector(".stepper").classList.contains("hidden")).toBe(true);
+    expect(text(doc.querySelector(".synmsg"))).toBe("Sync finished.");
+  }, 20000);
+
+  it("shows only whitelisted progress fields from the status API (no extra or secret fields)", async () => {
+    const sync = fakeSync({ running: true, progress: { ...progress(2), token: "SECRET-TOKEN", db: "/secret/path.db", steps: STEPS.map(x => ({ ...x, url: "https://api.example/secret" })) } });
+    const data = new DashboardData(file, { timezone: "Asia/Jakarta" }); opened.push(data);
+    const handler = createDashboard({ ownerPassword: PASSWORD, data, failDelayMs: 0, syncStatus: sync.status, startSync: sync.startSync! });
+    const lp = await handler(new Request(ORIGIN + "/dashboard/login"));
+    const csrf = lp.headers.getSetCookie()[0]!.split(";")[0]!.split("=")[1]!;
+    const res = await handler(new Request(ORIGIN + "/dashboard/login", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, cookie: "zepp_dash_csrf=" + csrf }, body: new URLSearchParams({ csrf, password: PASSWORD }).toString() }));
+    const cookie = res.headers.getSetCookie().find(c => c.startsWith("zepp_dash="))!.split(";")[0]!;
+    const body = await (await handler(new Request(ORIGIN + "/dashboard/api/status", { headers: { cookie } }))).json() as any;
+    expect(Object.keys(body.sync.progress).sort()).toEqual(["chunk", "current", "mode", "overlap_days", "since", "steps", "total", "window_end", "window_start"]);
+    expect(body.sync.progress).toMatchObject({ current: 2, total: 9, window_start: "2026-10-13", mode: "overlap" });
+    expect(body.sync.overlap_days).toBe(2);
+    expect(JSON.stringify(body)).not.toMatch(/SECRET|secret/);
+    sync.f.running = false;
+    const idle = await (await handler(new Request(ORIGIN + "/dashboard/api/status", { headers: { cookie } }))).json() as any;
+    expect(idle.sync.progress).toBeNull(); // never shown when nothing is running
   });
 
   it("has no button when manual sync is not wired up", async () => {

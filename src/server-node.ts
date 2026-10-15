@@ -98,11 +98,11 @@ if (ownerPassword.length >= 16) {
     data: new DashboardData(path.resolve(syncConfig.dbPath), { timezone: env.USER_TIMEZONE }),
     ...(analysisLoader ? { loadAnalysis: analysisLoader } : {}),
     ...(syncService ? { syncStatus: () => syncService!.status() } : {}),
-    // "Sync now" on the dashboard: the same read-only sync routine, fixed to the configured recent window (SYNC_RECENT_DAYS), trigger "manual"
+    // "Sync now" on the dashboard: the same read-only sync routine with the smart window (last success minus SYNC_OVERLAP_DAYS, at most 31 days; the backfill on a first run), trigger "manual"; the caller chooses no dates
     ...(syncService ? { startSync: () => {
       if (!manualSyncReady || !syncService) return 'unavailable' as const;
       if (syncService.isRunning()) return 'running' as const;
-      void syncService.run('manual', { days: syncConfig.recentDays }).catch(e => console.error('[zepp] manual sync crashed: ' + (e instanceof Error ? e.name : 'error')));
+      void syncService.run('manual').catch(e => console.error('[zepp] manual sync crashed: ' + (e instanceof Error ? e.name : 'error')));
       return 'started' as const;
     } } : {})
   });
