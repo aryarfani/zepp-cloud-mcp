@@ -36,6 +36,8 @@ export interface SessionManager {
   issue(): Promise<{ token: string; expiresAt: number }>;
   verify(token: string | undefined): Promise<{ sid: string; expiresAt: number } | null>;
   revoke(token: string | undefined): Promise<void>;
+  /** Token for the page of this session, sent back in the x-csrf-token header on mutating calls (HMAC of the session id; no storage). */
+  csrfToken(sid: string): Promise<string>;
 }
 
 export function createSessionManager(keyMaterial: string, now: () => number = () => Date.now()): SessionManager {
@@ -73,6 +75,10 @@ export function createSessionManager(keyMaterial: string, now: () => number = ()
       const session = await parse(token);
       if (!session) return null;
       return revoked.has(session.sid) ? null : session;
+    },
+    async csrfToken(sid) {
+      const mac = new Uint8Array(await crypto.subtle.sign("HMAC", await key(), enc.encode(`csrf.v1.${sid}`)));
+      return b64url(mac);
     },
     async revoke(token) {
       const session = await parse(token);

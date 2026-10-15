@@ -182,6 +182,24 @@ svg.route{position:absolute;inset:0;width:100%;height:100%;display:block;pointer
 .bm-key .dot{flex:none;width:12px;height:12px;border-radius:50%;margin-top:4px}
 .bm-key .dot.p{background:#ef4444}.bm-key .dot.s{background:#f59e0b}.bm-key .dot.n{background:#566072}
 .bm-note{margin:4px 0 0;padding:10px 12px;font-size:.78rem;line-height:1.4;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.syncctl{width:100%;margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.synctop{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.syncbtn{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:999px;font-weight:650}
+.syncbtn.primary{background:var(--grad);border-color:transparent;color:#071210}
+.syncbtn.primary:hover:not(:disabled){filter:brightness(1.08);background:var(--grad)}
+.syncbtn:disabled{cursor:progress;opacity:.82}
+.syncbtn svg{width:16px;height:16px}
+.syncbtn .spin{display:none;width:15px;height:15px;border:2px solid rgba(7,18,16,.3);border-top-color:#071210;border-radius:50%;animation:spin .8s linear infinite}
+.syncbtn.busy svg{display:none}.syncbtn.busy .spin{display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pbar{width:100%;max-width:520px;height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:12px;position:relative}
+.pbar .fill{height:100%;width:0;border-radius:3px;background:var(--grad);transition:width .3s}
+.pbar.ind .fill{position:absolute;width:35%;animation:indet 1.3s ease-in-out infinite}
+@keyframes indet{0%{left:-35%}100%{left:100%}}
+.synprog{margin-top:6px}
+.synmsg{margin-top:10px;font-size:.84rem;min-height:1.2em}
+.synmsg.ok{color:var(--good)}.synmsg.bad{color:var(--bad)}
+@media (prefers-reduced-motion:reduce){.syncbtn .spin,.pbar.ind .fill{animation-duration:3s}}
 .mapcard{padding:10px 10px 8px}
 .mapcard .mapbox{height:clamp(300px,46vh,460px)}
 .mapcard .sub{margin:8px 4px 0;font-size:.72rem}
@@ -284,6 +302,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     dumbbell: "M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11",
     chevron: "M15 18l-6-6 6-6",
     check: "M5 12.5l4.5 4.5L19 7.5",
+    refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
     grid: "M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z"
   };
   function ico(name, cls) {
@@ -350,6 +369,15 @@ export const DASHBOARD_JS = String.raw`(function () {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     }).then(function (j) { if (j && j.timezone) TZ = j.timezone; return j; });
+  }
+
+  /** POST to a dashboard mutation route with the per-session CSRF token. Resolves { status, body }; a 401 sends the user to the login page. */
+  function apiPost(path) {
+    var app = $("app"), csrf = app ? app.getAttribute("data-csrf") || "" : "";
+    return fetch("/dashboard/api/" + path, { method: "POST", credentials: "same-origin", headers: { accept: "application/json", "x-csrf-token": csrf } }).then(function (r) {
+      if (r.status === 401) { window.location.href = "/dashboard/login"; throw new Error("Signed out"); }
+      return r.json().catch(function () { return {}; }).then(function (body) { return { status: r.status, body: body }; });
+    });
   }
 
   // ---- charts (inline SVG, tap or hover for a tooltip) --------------------------------------------------------------
@@ -684,18 +712,93 @@ export const DASHBOARD_JS = String.raw`(function () {
     });
   }
 
+  // "Sync now": starts the server's normal sync for its fixed recent window (the page sends no dates), then polls the status.
+  var SYNC_POLL_MS = 2000;
+  function syncControl(box, token, st) {
+    var sy = st.sync;
+    if (!sy || sy.manual_available === false) return null;
+    var days = isNum(sy.recent_days) ? sy.recent_days : null;
+    var ui = state.syncUi || (state.syncUi = { msg: null, timer: 0 });
+    var btn = h("button", { type: "button", "class": "syncbtn primary" });
+    var spin = h("span", { "class": "spin", "aria-hidden": "true" });
+    var label = h("span", { "class": "lbl" });
+    btn.appendChild(ico("refresh")); btn.appendChild(spin); btn.appendChild(label);
+    var hint = h("div", { "class": "sub synchint", text: days ? "Fetches the last " + days + (days === 1 ? " day" : " days") : "Fetches the most recent days" });
+    var fill = h("div", { "class": "fill" });
+    var bar = h("div", { "class": "pbar ind hidden", role: "progressbar", "aria-label": "Sync progress" }, fill);
+    var prog = h("div", { "class": "sub synprog hidden" });
+    var msg = h("div", { "class": "synmsg", role: "status", "aria-live": "polite" });
+    var wrap = h("div", { "class": "syncctl" }, [h("div", { "class": "synctop" }, [btn, hint]), bar, prog, msg]);
+    function showMsg(kind, text) { ui.msg = text ? { kind: kind, text: text } : null; msg.textContent = text || ""; msg.className = "synmsg" + (text ? " " + kind : ""); }
+    function paint(running, progress) {
+      btn.disabled = running; btn.setAttribute("aria-busy", running ? "true" : "false");
+      btn.classList.toggle("busy", running);
+      label.textContent = running ? "Syncing\u2026" : "Sync now";
+      bar.classList.toggle("hidden", !running); prog.classList.toggle("hidden", !running || !progress);
+      var det = running && progress && isNum(progress.done) && isNum(progress.total) && progress.total > 0;
+      bar.classList.toggle("ind", !det);
+      if (det) {
+        var pct = Math.round(progress.done / progress.total * 100);
+        fill.style.width = pct + "%"; bar.setAttribute("aria-valuemin", "0"); bar.setAttribute("aria-valuemax", String(progress.total)); bar.setAttribute("aria-valuenow", String(progress.done));
+        prog.textContent = "Day " + progress.done + " of " + progress.total;
+      } else { fill.style.width = ""; bar.removeAttribute("aria-valuenow"); prog.textContent = ""; }
+    }
+    function stop() { if (ui.timer) { clearTimeout(ui.timer); ui.timer = 0; } }
+    function done() {
+      stop();
+      // the run is over: reload the status, coverage and recent runs, and say how it went (from the stored run, never upstream text)
+      api("status").then(function (next) {
+        if (token !== navToken) return;
+        var lr = next.last_run;
+        if (lr && lr.ok) showMsg("ok", "Sync finished.");
+        else if (lr) showMsg("bad", "Sync failed" + (lr.error_kind ? " (" + lr.error_kind + ")" : "") + ". See Recent runs.");
+        else showMsg("bad", "Sync did not record a run.");
+        paintView(box, token, next);
+      }).catch(function () { if (token === navToken) { paint(false); showMsg("bad", "Could not read the sync status."); } });
+    }
+    function poll() {
+      stop();
+      ui.timer = setTimeout(function () {
+        ui.timer = 0;
+        if (token !== navToken || !wrap.isConnected) return;
+        api("status").then(function (next) {
+          if (token !== navToken || !wrap.isConnected) return;
+          var run = next.sync && next.sync.running;
+          if (run) { paint(true, next.sync.progress); poll(); } else done();
+        }).catch(function () { if (token === navToken && wrap.isConnected) poll(); });
+      }, SYNC_POLL_MS);
+    }
+    btn.addEventListener("click", function () {
+      if (btn.disabled) return;
+      showMsg("", ""); paint(true, null);
+      apiPost("sync/run").then(function (r) {
+        if (r.status === 202 || r.status === 409) { paint(true, null); poll(); return; }
+        paint(false);
+        showMsg("bad", r.status === 429 ? "Too many manual syncs. Try again later." : r.status === 403 ? "Your session expired. Reload the page and try again." : r.status === 503 ? "Manual sync is not available." : "Could not start the sync.");
+      }).catch(function () { paint(false); showMsg("bad", "Could not start the sync."); });
+    });
+    var running = !!sy.running;
+    paint(running, sy.progress);
+    if (ui.msg && !running) showMsg(ui.msg.kind, ui.msg.text);
+    if (running) poll();
+    return wrap;
+  }
+  function paintView(box, token, st) {
+    clear(box);
+    if (!st.available) { box.appendChild(panel("", empty("Local database not available yet"))); return; }
+    var ctl = syncControl(box, token, st);
+    box.appendChild(panel("Status", [ctl, syncLine(st),
+      st.last_run ? h("div", { class: "sub", text: "Last run " + localDateTime(st.last_run.started_at) + " (" + st.last_run.trigger + ", " + shortDate(st.last_run.range_start) + " to " + shortDate(st.last_run.range_end) + ")" }) : null]));
+    box.appendChild(panel("Coverage", table(["Data", "Rows", "First", "Last"], st.coverage.map(function (c) { return [c.table.replace(/_/g, " "), fmtInt(c.rows), c.first ? shortDate(c.first) + " " + c.first.slice(0, 4) : "-", c.last ? shortDate(c.last) + " " + c.last.slice(0, 4) : "-"]; }), [1])));
+    box.appendChild(panel("Recent runs", (st.recent_runs || []).length ? table(["Started", "Trigger", "Result"], st.recent_runs.map(function (r) {
+      return [localDateTime(r.started_at), r.trigger, h("span", { class: "badge " + (r.ok ? "ok" : r.status === "running" ? "warn" : "bad"), text: r.ok ? "ok" : r.status + (r.error_kind ? " (" + r.error_kind + ")" : "") })];
+    })) : empty("No sync runs yet")));
+    box.appendChild(h("div", { class: "sub", text: "Strength sets " + fmtInt(st.strength_sets) + " | charge insights " + fmtInt(st.charge_insights) + " | schema v" + st.schema_version + " | database " + (isNum(st.db_bytes) ? (st.db_bytes / 1048576).toFixed(1) + " MB" : "-") + " | times in " + TZ }));
+  }
   function viewSync(box, token) {
     return api("status").then(function (st) {
       if (token !== navToken) return;
-      clear(box);
-      if (!st.available) { box.appendChild(panel("", empty("Local database not available yet"))); return; }
-      box.appendChild(panel("Status", [syncLine(st),
-        st.last_run ? h("div", { class: "sub", text: "Last run " + localDateTime(st.last_run.started_at) + " (" + st.last_run.trigger + ", " + shortDate(st.last_run.range_start) + " to " + shortDate(st.last_run.range_end) + ")" }) : null]));
-      box.appendChild(panel("Coverage", table(["Data", "Rows", "First", "Last"], st.coverage.map(function (c) { return [c.table.replace(/_/g, " "), fmtInt(c.rows), c.first ? shortDate(c.first) + " " + c.first.slice(0, 4) : "-", c.last ? shortDate(c.last) + " " + c.last.slice(0, 4) : "-"]; }), [1])));
-      box.appendChild(panel("Recent runs", (st.recent_runs || []).length ? table(["Started", "Trigger", "Result"], st.recent_runs.map(function (r) {
-        return [localDateTime(r.started_at), r.trigger, h("span", { class: "badge " + (r.ok ? "ok" : r.status === "running" ? "warn" : "bad"), text: r.ok ? "ok" : r.status + (r.error_kind ? " (" + r.error_kind + ")" : "") })];
-      })) : empty("No sync runs yet")));
-      box.appendChild(h("div", { class: "sub", text: "Strength sets " + fmtInt(st.strength_sets) + " | charge insights " + fmtInt(st.charge_insights) + " | schema v" + st.schema_version + " | database " + (isNum(st.db_bytes) ? (st.db_bytes / 1048576).toFixed(1) + " MB" : "-") + " | times in " + TZ }));
+      paintView(box, token, st);
     });
   }
 
@@ -1561,10 +1664,10 @@ export function renderLoginHtml(opts: { nonce: string; csrf: string; error?: str
     `<button type="submit"${opts.locked ? " disabled" : ""}>Sign in</button></form></div></main></body></html>`;
 }
 
-export function renderDashboardHtml(nonce: string): string {
+export function renderDashboardHtml(nonce: string, csrf = ""): string {
   const n = escapeHtml(nonce);
   const nav = NAV_ITEMS.map(i => `<a href="#/${i.route}" data-route="${i.route}" data-tip="${i.label}" title="${i.label}" aria-label="${i.label}">${icon(i.route)}<span>${i.label}</span></a>`).join("");
-  return `${HEAD(nonce, "Zepp")}<body><div id="app" class="app">` +
+  return `${HEAD(nonce, "Zepp")}<body><div id="app" class="app" data-csrf="${escapeHtml(csrf)}">` +
     `<aside id="sidebar" class="side"><div class="brand"><span class="logo">Z</span><span class="bname">Zepp</span>` +
     `<button id="collapse" type="button" class="collapse" aria-label="Collapse sidebar" title="Collapse sidebar" aria-expanded="true" aria-controls="sidebar"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${CHEVRON}"/></svg></button></div>` +
     `<nav class="menu" aria-label="Sections">${nav}</nav>` +

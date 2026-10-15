@@ -14,6 +14,8 @@ const LOGIN_MAX_PER_IP = 5;
 const LOGIN_MAX_GLOBAL = 20;
 const MAX_LOGIN_BODY = 4096;
 const DEFAULT_FAIL_DELAY_MS = 600;
+const SYNC_RUN_WINDOW_MS = 60 * 60 * 1000;
+const SYNC_RUN_MAX_PER_WINDOW = 5;
 
 export interface DashboardOptions {
   ownerPassword: string;
@@ -27,6 +29,12 @@ export interface DashboardOptions {
   loadAnalysis?: (workoutId: string) => Promise<{ status: "ok"; analysis: unknown } | { status: "unavailable"; reason: string }>;
   /** Optional: live sync status (next run, running) merged into /dashboard/api/status. */
   syncStatus?: () => unknown;
+  /**
+   * Optional: start ONE manual sync of the configured recent window in the background (never with caller-chosen dates).
+   * Returns "started", "running" (one is already in progress, nothing started) or "unavailable" (no Zepp credentials or sync not set up).
+   * The dashboard only triggers it; the sync itself uses the existing read-only Zepp calls.
+   */
+  startSync?: () => "started" | "running" | "unavailable";
   now?: () => number;
   /** Pause after a wrong password (default 600 ms). */
   failDelayMs?: number;
@@ -58,8 +66,10 @@ function securityHeaders(contentType: string, nonce?: string): Headers {
   return h;
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: securityHeaders("application/json; charset=utf-8") });
+function json(body: unknown, status = 200, extra?: Headers): Response {
+  const h = securityHeaders("application/json; charset=utf-8");
+  extra?.forEach((v, k) => h.set(k, v));
+  return new Response(JSON.stringify(body), { status, headers: h });
 }
 function text(body: string, status: number, extra: Record<string, string> = {}): Response {
   const h = securityHeaders("text/plain; charset=utf-8");
@@ -131,6 +141,32 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
     return redirect("/dashboard", [sessionCookie(token), clearCsrfCookie()], 303);
   }
 
+  /** POST /dashboard/api/sync/run: session (checked by the caller) + same-origin + per-session CSRF token, no parameters, rate limited. */
+  async function syncRun(request: Request, url: URL, sid: string): Promise<Response> {
+    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+    if (!isSameOriginPost(request, url.origin)) return json({ error: "Cross-origin request rejected" }, 403);
+    const sent = request.headers.get("x-csrf-token") ?? "";
+    if (!sent || !(await safeEqual(sent, await (await sessions()).csrfToken(sid)))) return json({ error: "Invalid CSRF token" }, 403);
+    // The window is fixed on the server (SYNC_RECENT_DAYS). Nothing the caller sends is read, so reject anything that tries.
+    const body = await request.arrayBuffer();
+    if (url.search || body.byteLength > 0) return json({ error: "This endpoint takes no parameters" }, 400);
+    if (!opts.startSync) return json({ error: "Manual sync is not available" }, 503);
+    if (limiter.count("sync-run", SYNC_RUN_WINDOW_MS) >= SYNC_RUN_MAX_PER_WINDOW) {
+      const h = new Headers({ "retry-after": "600" });
+      return json({ error: "Too many manual syncs. Try again later.", retry_after_s: 600 }, 429, h);
+    }
+    let outcome: "started" | "running" | "unavailable";
+    try { outcome = opts.startSync(); }
+    catch (error) {
+      console.error(`[zepp] manual sync could not start: ${error instanceof Error ? error.name : "error"}`);
+      return json({ error: "Could not start the sync" }, 500);
+    }
+    if (outcome === "unavailable") return json({ error: "Manual sync is not available" }, 503);
+    if (outcome === "running") return json({ started: false, running: true }, 409);
+    limiter.add("sync-run");
+    return json({ started: true, running: true }, 202);
+  }
+
   function withRetryAfter(response: Response): Response { response.headers.set("retry-after", "900"); return response; }
 
   async function api(request: Request, url: URL, path: string): Promise<Response> {
@@ -199,7 +235,15 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
       const s = provider() as Record<string, unknown>;
       // Only the schedule/state bits; never file paths or settings.
       const schedule = (s.schedule ?? {}) as Record<string, unknown>;
-      return { enabled: s.enabled ?? null, running: s.running ?? null, next_run_at: schedule.next_run_at ?? null, local_hour: schedule.local_hour ?? null };
+      const settings = (s.settings ?? {}) as Record<string, unknown>;
+      const progress = (s.progress ?? null) as { done?: unknown; total?: unknown } | null;
+      return {
+        enabled: s.enabled ?? null, running: s.running ?? null, next_run_at: schedule.next_run_at ?? null, local_hour: schedule.local_hour ?? null,
+        recent_days: Number.isInteger(settings.recent_days) ? settings.recent_days : null,
+        manual_available: opts.startSync ? true : false,
+        // only a real, sync-reported progress is passed on; the UI shows an indeterminate bar otherwise
+        progress: progress && Number.isInteger(progress.done) && Number.isInteger(progress.total) && (progress.total as number) > 0 && (progress.done as number) >= 0 && (progress.done as number) <= (progress.total as number) ? { done: progress.done, total: progress.total } : null
+      };
     } catch { return undefined; }
   }
 
@@ -228,13 +272,15 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
 
     if (path.startsWith("/dashboard/api/") || path === "/dashboard/api") {
       if (!session) return json({ error: "Authentication required" }, 401);
+      if (path === "/dashboard/api/sync/run") return syncRun(request, url, session.sid);
       return api(request, url, path.slice("/dashboard/api/".length));
     }
 
     if (path === "/dashboard") {
       if (method !== "GET") return text("Method not allowed", 405, { allow: "GET" });
       if (!session) return redirect("/dashboard/login");
-      return page(nonce => renderDashboardHtml(nonce));
+      const csrf = await (await sessions()).csrfToken(session.sid);
+      return page(nonce => renderDashboardHtml(nonce, csrf));
     }
     return session ? text("Not Found", 404) : redirect("/dashboard/login");
   };

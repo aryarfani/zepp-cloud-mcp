@@ -60,6 +60,7 @@ if (ownerPassword.length >= 16) {
 const syncConfig = parseSyncConfig(process.env);
 let syncService: SyncService | null = null;
 let analysisLoader: ReturnType<typeof createAnalysisLoader> | undefined;
+let manualSyncReady = false;
 try {
   const store = new ZeppStore(path.resolve(syncConfig.dbPath));
   try { const renamed = store.rederiveExerciseNames(); if (renamed) console.log('[zepp] re-derived ' + renamed + ' stored strength exercise name(s)'); } catch (e: any) { console.warn('[zepp] exercise name re-derive skipped: ' + (e?.message ?? 'error')); }
@@ -74,6 +75,7 @@ try {
   if (zeppCtx) {
     analysisLoader = createAnalysisLoader({ ctx: zeppCtx, store, log: m => console.log('[zepp] ' + m) });
     syncService = createSyncService({ ctx: zeppCtx, store, config: syncConfig, log: m => console.log('[zepp] ' + m) });
+    manualSyncReady = true;
     startSyncScheduler({ service: syncService, lastSuccessAt: () => store.lastSuccessfulRun()?.finished_at ?? null, timezone: env.USER_TIMEZONE, log: m => console.log('[zepp] ' + m) });
   } else {
     console.warn('[zepp] daily sync not started (Zepp credentials missing or invalid); sync_status still reads the store');
@@ -95,7 +97,14 @@ if (ownerPassword.length >= 16) {
     ...(sessionSecret ? { sessionSecret } : {}),
     data: new DashboardData(path.resolve(syncConfig.dbPath), { timezone: env.USER_TIMEZONE }),
     ...(analysisLoader ? { loadAnalysis: analysisLoader } : {}),
-    ...(syncService ? { syncStatus: () => syncService!.status() } : {})
+    ...(syncService ? { syncStatus: () => syncService!.status() } : {}),
+    // "Sync now" on the dashboard: the same read-only sync routine, fixed to the configured recent window (SYNC_RECENT_DAYS), trigger "manual"
+    ...(syncService ? { startSync: () => {
+      if (!manualSyncReady || !syncService) return 'unavailable' as const;
+      if (syncService.isRunning()) return 'running' as const;
+      void syncService.run('manual', { days: syncConfig.recentDays }).catch(e => console.error('[zepp] manual sync crashed: ' + (e instanceof Error ? e.name : 'error')));
+      return 'started' as const;
+    } } : {})
   });
   console.log('[zepp] dashboard enabled at /dashboard');
 }

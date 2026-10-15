@@ -214,7 +214,7 @@ describe("dashboard page", () => {
     // SVG namespace (not a request), the OSM tile URL template (the one allowed image host) and the attribution link (navigation only).
     expect(urls.sort()).toEqual(["http://www.w3.org/2000/svg", `${TILE_HOST}/`, "https://www.openstreetmap.org/copyright"].sort());
     expect(DASHBOARD_JS).toContain('referrerpolicy: "origin"'); // OSM tile policy wants a valid Referer
-    expect(DASHBOARD_JS.match(/fetch\(/g)).toHaveLength(1);
+    expect(DASHBOARD_JS.match(/fetch\(/g)).toHaveLength(2); // the GET helper and the one POST helper (sync/run)
     expect(DASHBOARD_JS).toContain('"/dashboard/api/"');
   });
 
@@ -345,7 +345,7 @@ describe("dashboard API (temp database)", () => {
     expect(cov.charge_samples.rows).toBe(13);
     expect(cov.blood_pressure.rows).toBe(0);
     expect(body.strength_sets).toBe(3);
-    expect(body.sync).toEqual({ enabled: true, running: false, next_run_at: "2026-10-16T21:00:00.000Z", local_hour: 4 });
+    expect(body.sync).toEqual({ enabled: true, running: false, next_run_at: "2026-10-16T21:00:00.000Z", local_hour: 4, recent_days: null, manual_available: false, progress: null });
     expect(JSON.stringify(body)).not.toContain("/secret/path.db");
   });
 
