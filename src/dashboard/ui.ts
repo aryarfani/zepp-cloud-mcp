@@ -949,7 +949,7 @@ export const DASHBOARD_JS = String.raw`(function () {
   // If tiles cannot load (offline, blocked, or the user switched the map off) the same overlay is shown as a plain GPS track.
   var TILE_BASE = "https://tile.openstreetmap.org/";
   var MAP_PREF = "zepp.map";
-  var MAP_MIN_ZOOM = 3, MAP_MAX_ZOOM = 18, MAP_MAX_TILES = 48;
+  var MAP_MIN_ZOOM = 3, MAP_MAX_ZOOM = 19, MAP_FIT_MAX_ZOOM = 19, MAP_MAX_TILES = 48;
   function mapEnabled() { try { return window.localStorage.getItem(MAP_PREF) !== "off"; } catch (e) { return true; } }
   function setMapEnabled(on) { try { window.localStorage.setItem(MAP_PREF, on ? "on" : "off"); } catch (e) { /* storage unavailable */ } }
   function mapWorld(z) { return 256 * Math.pow(2, z); }
@@ -1024,10 +1024,12 @@ export const DASHBOARD_JS = String.raw`(function () {
 
     function fitView() {
       m.W = box.clientWidth || m.W; m.H = box.clientHeight || m.H;
-      var pad = 36, z, w, hh;
-      for (z = 16; z > MAP_MIN_ZOOM; z--) {
+      // Closest zoom at which the whole route fits with about 9% of free space on every side (tiles come in whole zoom levels,
+      // so a short route fills roughly 40-80% of the map height). A single point or tiny jitter stops at the max zoom.
+      var padX = m.W * 0.09, padY = m.H * 0.09, z, w, hh;
+      for (z = MAP_FIT_MAX_ZOOM; z > MAP_MIN_ZOOM; z--) {
         w = mapX(b[3], z) - mapX(b[1], z); hh = mapY(b[0], z) - mapY(b[2], z);
-        if (w <= m.W - 2 * pad && hh <= m.H - 2 * pad) break;
+        if (w <= m.W - 2 * padX && hh <= m.H - 2 * padY) break;
       }
       m.z = z; m.cx = (mapX(b[1], z) + mapX(b[3], z)) / 2; m.cy = (mapY(b[0], z) + mapY(b[2], z)) / 2;
     }
