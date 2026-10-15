@@ -8,7 +8,9 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && vitest run -c vitest.node.config.ts",
+    "test:node": "vitest run -c vitest.node.config.ts",
+    "sync": "tsx scripts/sync.ts",
     "test:watch": "vitest",
     "test:live": "tsx scripts/live-probe.ts"
   },

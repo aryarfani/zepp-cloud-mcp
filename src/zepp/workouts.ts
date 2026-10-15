@@ -170,34 +170,43 @@ function timestampInRange(summary: WorkoutSummary, range: DateRange): boolean {
   return timestamp >= range.fromMs && timestamp <= range.toMs;
 }
 
+export interface WorkoutHistoryItem { summary: WorkoutSummary; raw: Record<string, unknown> }
+
+async function collectWorkoutHistory(ctx: ServiceContext, range: DateRange, wanted: string | undefined, cappedLimit: number): Promise<WorkoutHistoryItem[]> {
+  const output: WorkoutHistoryItem[] = [];
+  const seen = new Set<string>();
+  let startTrackId = range.fromSec;
+  let stopTrackId = range.toSec;
+  for (let page = 0; page < MAX_HISTORY_PAGES && output.length < cappedLimit; page++) {
+    const raw = await ctx.zepp.get(buildZeppRequest("sportHistory", { userid: ctx.config.ZEPP_USER_ID, startTrackId, stopTrackId, need_sub_data: 1, type: 0 }));
+    for (const item of historyItems(raw)) {
+      const summary = normalizeWorkoutSummary(item, range.timezone);
+      if (!summary || seen.has(summary.workout_id) || !timestampInRange(summary, range)) continue;
+      if (wanted && summary.activity_type !== wanted) continue;
+      seen.add(summary.workout_id);
+      output.push({ summary, raw: objectValue(item) ?? {} });
+      if (output.length >= cappedLimit) break;
+    }
+    const next = nextCursor(raw);
+    if (!next || Number(next) <= 0 || Number(next) === stopTrackId) break;
+    stopTrackId = Number(next);
+  }
+  return output.sort((a, b) => b.summary.started_at.localeCompare(a.summary.started_at));
+}
+
+/** Workout history for a range with each upstream history item kept alongside its normalized summary (used by the sync). Not cached. */
+export async function fetchWorkoutHistoryWithRaw(ctx: ServiceContext, range: DateRange, limit = 200): Promise<WorkoutHistoryItem[]> {
+  return collectWorkoutHistory(ctx, range, undefined, Math.max(1, Math.min(200, Math.floor(limit))));
+}
+
 export async function listWorkouts(ctx: ServiceContext, range: DateRange, activityType?: string, limit = 50): Promise<Envelope<WorkoutSummary[]>> {
   const wanted = activityType?.trim().toLowerCase();
   const cappedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
   const cacheKey = { userId: ctx.config.ZEPP_USER_ID, from: range.fromSec, to: range.toSec, activityType: wanted ?? null, limit: cappedLimit };
-  const workouts = await withZeppCache("workout-history", cacheKey, 300, async () => {
-    const output: WorkoutSummary[] = [];
-    const seen = new Set<string>();
-    let startTrackId = range.fromSec;
-    let stopTrackId = range.toSec;
-    for (let page = 0; page < MAX_HISTORY_PAGES && output.length < cappedLimit; page++) {
-      const raw = await ctx.zepp.get(buildZeppRequest("sportHistory", { userid: ctx.config.ZEPP_USER_ID, startTrackId, stopTrackId, need_sub_data: 1, type: 0 }));
-      for (const item of historyItems(raw)) {
-        const summary = normalizeWorkoutSummary(item, range.timezone);
-        if (!summary || seen.has(summary.workout_id) || !timestampInRange(summary, range)) continue;
-        if (wanted && summary.activity_type !== wanted) continue;
-        seen.add(summary.workout_id);
-        output.push(summary);
-        if (output.length >= cappedLimit) break;
-      }
-      const next = nextCursor(raw);
-      if (!next || Number(next) <= 0 || Number(next) === stopTrackId) break;
-      stopTrackId = Number(next);
-    }
-    return output.sort((a, b) => b.started_at.localeCompare(a.started_at));
-  });
+  const workouts = await withZeppCache("workout-history", cacheKey, 300, async () =>
+    (await collectWorkoutHistory(ctx, range, wanted, cappedLimit)).map(item => item.summary));
   return workouts.length ? ok(workouts, range.timezone) : noData(range.timezone);
 }
-
 export function recognizableWorkoutDetail(raw: unknown): Record<string, unknown> {
   const root = objectValue(raw);
   const data = root ? objectValue(root.data) : undefined;
