@@ -79,9 +79,9 @@ describe("workout detail for running/walking/cycling", () => {
       expect(text(rows[3]!)).toContain("0.20 km");
       const route = wa.querySelector("svg.route")!;
       expect(route.querySelector("path")!.getAttribute("d")!.startsWith("M")).toBe(true);
-      expect(text(wa)).toContain("Plain GPS track");
+      expect(text(wa)).toContain("OpenStreetMap contributors");
       expect(h.fetches.some(u => u.endsWith("/analysis"))).toBe(true);
-      expect(h.doc.querySelectorAll("[style]").length).toBe(0);
+      expect([...h.doc.querySelectorAll("[style]")].filter((e: Element) => !e.matches(".maptiles img")).length).toBe(0); // only map tiles are positioned through the CSSOM
     } finally { h.close(); }
   });
 

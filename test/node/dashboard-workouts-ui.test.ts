@@ -128,18 +128,20 @@ describe("workouts: infinite scroll", () => {
   it("respects the type filter and drops a stale page that arrives after the filter changed", async () => {
     const h = await boot("#/workouts");
     try {
-      const select = h.doc.querySelector(".wlist-pane select") as HTMLSelectElement;
-      select.value = "walking"; select.dispatchEvent(new h.win.Event("change")); await wait();
+      const chip = (label: string) => [...h.doc.querySelectorAll(".wlist-pane .chips button")].find(b => (b.textContent ?? "").startsWith(label)) as HTMLButtonElement;
+      const pick = async (label: string) => { chip(label).click(); await wait(); };
+      await pick("Walking");
       expect(pageFetches(h).at(-1)).toContain("type=walking");
       expect(rows(h)).toHaveLength(20);
       expect([...rows(h)].every(r => /Walking/.test(r.textContent ?? ""))).toBe(true);
       expect(text(h.doc.querySelector(".wlist > .wend"))).toBe("End of list");
 
-      select.value = "outdoor_running"; select.dispatchEvent(new h.win.Event("change")); await wait();
+      expect(chip("Walking").getAttribute("aria-pressed")).toBe("true");
+      await pick("Outdoor running");
       expect(rows(h)).toHaveLength(25);
       const gate = h.hold();
       await h.fire(); // page 2 of the running list is now in flight...
-      select.value = "walking"; select.dispatchEvent(new h.win.Event("change")); await wait(); // ...and the user switches filter
+      await pick("Walking"); // ...and the user switches filter
       gate.release(); await wait();
       expect(rows(h)).toHaveLength(20); // the stale running page was discarded
       expect([...rows(h)].every(r => /Walking/.test(r.textContent ?? ""))).toBe(true);

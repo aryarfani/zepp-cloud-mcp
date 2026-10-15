@@ -5,7 +5,7 @@ import vm from "node:vm";
 import { DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app";
-import { createDashboard } from "../../src/dashboard/handler";
+import { TILE_HOST, createDashboard } from "../../src/dashboard/handler";
 import { DashboardData } from "../../src/dashboard/data";
 import { DASHBOARD_JS, NAV_ITEMS, renderDashboardHtml, renderLoginHtml } from "../../src/dashboard/ui";
 import { seedDashboardDb } from "./dashboard-seed";
@@ -80,7 +80,11 @@ describe("dashboard authentication", () => {
     const csp = res.headers.get("content-security-policy")!;
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("frame-ancestors 'none'");
-    expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|https?:/);
+    expect(csp).not.toMatch(/unsafe-inline|unsafe-eval/);
+    expect(csp.match(/https?:\/\/[^\s;']+/g)).toEqual([TILE_HOST]); // the OSM tile host is the only external origin
+    expect(csp).toContain(`img-src 'self' data: ${TILE_HOST};`);
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toMatch(/script-src 'nonce-[^']+'; style-src 'nonce-[^']+'/);
     const html = await res.text();
     expect(html).toContain(`value="${token}"`);
     expect(html).toContain(`<style nonce="${/nonce-([^';]+)/.exec(csp)![1]}">`);
@@ -201,12 +205,15 @@ describe("dashboard page", () => {
     const html = renderDashboardHtml("abc") + renderLoginHtml({ nonce: "abc", csrf: "x" });
     expect(html).not.toMatch(/<script[^>]*\ssrc=/i);
     expect(html).not.toMatch(/<link[^>]*href=/i);
-    expect(html).not.toMatch(/@import|url\(/i);
+    expect(html).not.toMatch(/@import|url\(\s*["']?(https?:)?\/\//i); // gradients use local fragment references only
+    expect(html.replace(/<script[\s\S]*<\/script>/, "")).not.toMatch(/<img\b/i); // map tiles are created by the script, never in the page markup
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect(html).not.toMatch(/\sstyle=/i);
     expect(DASHBOARD_JS).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/);
     const urls = DASHBOARD_JS.match(/https?:\/\/[^"'\s)]+/g) ?? [];
-    expect(urls).toEqual(["http://www.w3.org/2000/svg"]); // the SVG XML namespace, not a network request
+    // SVG namespace (not a request), the OSM tile URL template (the one allowed image host) and the attribution link (navigation only).
+    expect(urls.sort()).toEqual(["http://www.w3.org/2000/svg", `${TILE_HOST}/`, "https://www.openstreetmap.org/copyright"].sort());
+    expect(DASHBOARD_JS).toContain('referrerpolicy: "origin"'); // OSM tile policy wants a valid Referer
     expect(DASHBOARD_JS.match(/fetch\(/g)).toHaveLength(1);
     expect(DASHBOARD_JS).toContain('"/dashboard/api/"');
   });
@@ -219,10 +226,13 @@ describe("dashboard page", () => {
     expect(links).toEqual([["overview", "Overview"], ["sleep", "Sleep"], ["activity", "Activity"], ["charge", "Hybrid Charge"], ["workouts", "Workouts"], ["weight", "Weight"], ["sync", "Sync"]]);
     expect(sidebar).not.toMatch(/strength/i);
     expect(html.replace(/<script[\s\S]*<\/script>/, "").replace(/<style[\s\S]*<\/style>/, "")).not.toMatch(/strength/i);
-    expect(sidebar.startsWith('<aside id="sidebar" class="side"><div class="brand"><span class="logo">Z</span><span>Zepp</span></div>')).toBe(true);
+    expect(sidebar.startsWith('<aside id="sidebar" class="side"><div class="brand"><span class="logo">Z</span><span class="bname">Zepp</span>')).toBe(true);
+    expect(sidebar).toContain('id="collapse"'); // collapse / expand toggle
+    expect(sidebar).toMatch(/aria-expanded="true"/);
+    for (const i of NAV_ITEMS) expect(sidebar).toContain(`title="${i.label}" aria-label="${i.label}"`); // tooltips for the icon-only rail
     expect(sidebar.indexOf('action="/dashboard/logout"')).toBeGreaterThan(sidebar.lastIndexOf("</nav>"));
     expect(sidebar).toContain("Log out");
-    expect(sidebar.match(/<svg class="ico"/g)!.length).toBe(NAV_ITEMS.length + 1); // one icon per item plus logout
+    expect(sidebar.match(/<svg class="ico"/g)!.length).toBe(NAV_ITEMS.length + 2); // one icon per item, logout and the collapse chevron
     expect(html).toContain('id="menu"'); // hamburger for the mobile slide-over
     expect(html).toContain('id="scrim"');
   });
@@ -233,7 +243,7 @@ describe("dashboard page", () => {
     expect(DASHBOARD_JS).toContain('"#/workouts/"');
     expect(DASHBOARD_JS).toContain("#/workouts/exercises");
     expect(DASHBOARD_JS).toContain("unknown"); // unmapped ids are highlighted
-    expect(DASHBOARD_JS).not.toMatch(/placeholder/i);
+    expect(DASHBOARD_JS).not.toMatch(/lorem ipsum|TODO|FIXME/i);
   });
   it("has JavaScript that parses", () => {
     expect(() => new vm.Script(DASHBOARD_JS, { filename: "dashboard.js" })).not.toThrow();
