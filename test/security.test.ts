@@ -13,6 +13,6 @@ describe("public error sanitization", () => {
 
   it("returns only the rotation instruction for expired Zepp auth", () => {
     const envelope = fromError(new ZeppError("auth_expired", "raw upstream credential detail", 401), "Asia/Jakarta");
-    expect(envelope.meta.warnings).toEqual(["ZEPP_APP_TOKEN must be replaced in Cloudflare Worker secrets."]);
+    expect(envelope.meta.warnings).toEqual(["Zepp rejected the stored ZEPP_APP_TOKEN (expired or invalid); replace it in the server configuration."]);
   });
 });

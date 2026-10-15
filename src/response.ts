@@ -34,7 +34,7 @@ const SAFE_WARNING: Partial<Record<ZeppError["kind"], string>> = {
 export function fromError(error: unknown, timezone: string): Envelope<never> {
   if (error instanceof ZeppError) {
     const warnings: string[] = [];
-    if (error.kind === "auth_expired") warnings.push("ZEPP_APP_TOKEN must be replaced in Cloudflare Worker secrets.");
+    if (error.kind === "auth_expired") warnings.push("Zepp rejected the stored ZEPP_APP_TOKEN (expired or invalid); replace it in the server configuration.");
     else if (error.kind === "upstream_rate_limited") warnings.push(error.retryAfter ? `Zepp requested retry after ${error.retryAfter}.` : "Zepp rate limited the request.");
     else warnings.push(SAFE_WARNING[error.kind] ?? "Zepp request could not be completed safely.");
     return { status: error.kind, data: null, meta: { ...baseMeta(timezone), warnings } };
