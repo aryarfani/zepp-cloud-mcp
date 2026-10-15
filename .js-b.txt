@@ -1,4 +1,0 @@
-  function typeBadge(w, tiny) {
-    if (!w || !w.type_confidence) return null;
-    return h("span", { "class": "badge warn" + (tiny ? " tiny" : ""), title: "Sport name is a guess from Zepp type number " + (w.zepp_type === undefined || w.zepp_type === null ? "" : w.zepp_type) + " (" + w.type_confidence + ")", text: "inferred" });
-  }
