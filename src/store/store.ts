@@ -8,6 +8,7 @@ import type { StreamAvailability } from "../zepp/event-manifest";
 import type { DailySummary, SleepNight } from "../zepp/types";
 import type { WeightEntry } from "../zepp/weight";
 import type { StrengthSet } from "../zepp/strength";
+import { strengthExerciseName } from "../zepp/strength-exercises";
 import type { WorkoutSummary } from "../zepp/workouts";
 import { MIGRATIONS, type Migration } from "./migrations";
 
@@ -197,6 +198,23 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       sets.forEach((s, seq) => insert.run(workoutId, seq, s.set, s.exercise, s.action_type, s.reps, n(s.weight_kg), n(s.duration_s), n(s.avg_hr_bpm)));
       this.db.prepare("UPDATE workouts SET strength_checked = 1 WHERE workout_id = ?").run(workoutId);
       return sets.length;
+    });
+  }
+
+  /**
+   * Re-derive the stored `strength_sets.exercise` label from `action_type` with the current name tables.
+   * Idempotent: only rows whose label differs are touched, so a second run changes nothing. Returns the number of rows updated.
+   */
+  rederiveExerciseNames(): number {
+    const types = this.db.prepare("SELECT DISTINCT action_type FROM strength_sets").all() as Array<{ action_type: number }>;
+    const update = this.db.prepare("UPDATE strength_sets SET exercise = ? WHERE action_type = ? AND exercise <> ?");
+    return this.transaction(() => {
+      let changed = 0;
+      for (const { action_type } of types) {
+        const name = strengthExerciseName(Number(action_type));
+        changed += Number(update.run(name, action_type, name).changes);
+      }
+      return changed;
     });
   }
 

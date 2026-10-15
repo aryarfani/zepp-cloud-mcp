@@ -60,6 +60,7 @@ const syncConfig = parseSyncConfig(process.env);
 let syncService: SyncService | null = null;
 try {
   const store = new ZeppStore(path.resolve(syncConfig.dbPath));
+  try { const renamed = store.rederiveExerciseNames(); if (renamed) console.log('[zepp] re-derived ' + renamed + ' stored strength exercise name(s)'); } catch (e: any) { console.warn('[zepp] exercise name re-derive skipped: ' + (e?.message ?? 'error')); }
   const closed = store.closeInterruptedRuns(new Date().toISOString());
   if (closed) console.warn('[zepp] closed ' + closed + ' interrupted sync run(s) from a previous start');
   const credentialsOk = Boolean(env.MCP_SECRET && env.ZEPP_APP_TOKEN && env.ZEPP_USER_ID);

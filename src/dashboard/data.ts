@@ -2,7 +2,7 @@
 import { existsSync, statSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { addIsoDays } from "../time";
-import { strengthExerciseName } from "../zepp/strength-exercises";
+import { strengthExerciseName, strengthExerciseSource } from "../zepp/strength-exercises";
 
 type Row = Record<string, unknown>;
 
@@ -203,7 +203,7 @@ export class DashboardData {
          FROM strength_sets s JOIN workouts w ON w.workout_id = s.workout_id GROUP BY s.action_type ORDER BY COUNT(*) DESC`);
     const exercises = rows.map(r => {
       const name = strengthExerciseName(Number(r.action_type));
-      return { ...r, name, known: !name.startsWith("unknown_") };
+      return { ...r, name, known: !name.startsWith("unknown_"), source: strengthExerciseSource(Number(r.action_type)) };
     });
     return { available: true, exercises, unknown_count: exercises.filter(e => !e.known).length };
   }

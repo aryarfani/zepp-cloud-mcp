@@ -94,7 +94,7 @@ export function createZeppMcpServer(services: Services, extras: ZeppMcpExtras = 
   }, async ({ workout_id, max_points }) => safe(services, () => services.getWorkoutRoute(workout_id, max_points)));
 
   server.registerTool("get_strength_sets", {
-    description: "Get set-by-set details for one strength workout ID returned by list_workouts: exercise name, reps, weight (null for bodyweight), duration and average heart rate per set, plus per-exercise rollups (sets, total reps, volume in kg, max weight) and totals. Exercise names come from a small hand-maintained table; unknown exercise IDs are reported as unknown_<id>.",
+    description: "Get set-by-set details for one strength workout ID returned by list_workouts: exercise name, reps, weight (null for bodyweight), duration and average heart rate per set, plus per-exercise rollups (sets, total reps, volume in kg, max weight) and totals. Exercise names come from the owner's verified table first, then the bundled Gadgetbridge Zepp OS exercise catalog; ids in neither (and id 0, unassigned) are reported as unknown_<id>.",
     inputSchema: z.object({ workout_id: z.string().min(1).max(180) }), annotations
   }, async ({ workout_id }) => safe(services, () => services.getStrengthSets(workout_id)));
 
