@@ -153,10 +153,15 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
           return json(data.workouts({ limit, offset, ...(days !== undefined ? { days } : {}), ...(type ? { type } : {}) }));
         }
         default: {
-          const m = /^workouts\/([A-Za-z0-9_.:-]{1,200})$/.exec(path);
-          if (m) {
-            const detail = data.workout(m[1]!);
-            return detail ? json(detail) : json({ error: "Workout not found" }, 404);
+          if (path.startsWith("workouts/")) {
+            // Workout ids look like "zepp:<trackid>:<source>", so the colons arrive percent-encoded.
+            let id = "";
+            try { id = decodeURIComponent(path.slice("workouts/".length)); } catch { /* falls through to 404 */ }
+            if (/^[A-Za-z0-9_.:-]{1,200}$/.test(id)) {
+              const detail = data.workout(id);
+              if (detail) return json(detail);
+            }
+            return json({ error: "Not found" }, 404);
           }
           return json({ error: "Not found" }, 404);
         }

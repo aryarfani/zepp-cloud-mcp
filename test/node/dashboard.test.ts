@@ -62,7 +62,7 @@ describe("dashboard authentication", () => {
       expect(res.status).toBe(302);
       expect(res.headers.get("location")).toBe("/dashboard/login");
     }
-    for (const p of ["overview", "trends", "workouts", "workouts/w-run", "exercises", "status", "weight", "charge"]) {
+    for (const p of ["overview", "trends", "workouts", "workouts/zepp:1760482800:cnVuLmRldmljZQ", "exercises", "status", "weight", "charge"]) {
       const res = await get(handler, "/dashboard/api/" + p);
       expect(res.status).toBe(401);
       expect(await res.text()).not.toContain("steps");
@@ -240,7 +240,7 @@ describe("dashboard API (temp database)", () => {
     expect(body.sleep).toMatchObject({ sleep_date: "2026-10-15", duration_s: 25200, score: 82 });
     expect(body.sleep.stage_s).toEqual({ light: 7200, deep: 5400, rem: 12600 });
     expect(body.charge).toMatchObject({ date: "2026-10-15", samples: 12, min: 40, max: 51, last: 51, first: 40 });
-    expect(body.workout).toMatchObject({ workout_id: "w-run", activity_type: "outdoor_running" });
+    expect(body.workout).toMatchObject({ workout_id: "zepp:1760482800:cnVuLmRldmljZQ", activity_type: "outdoor_running" });
     expect(body.weight).toMatchObject({ weight_kg: 64.5 });
     expect(body.blood_pressure).toBeNull();
     expect(JSON.stringify(body)).not.toContain("raw-only");
@@ -262,14 +262,14 @@ describe("dashboard API (temp database)", () => {
   it("workouts: list, type filter, paging, total", async () => {
     const all = (await api("workouts")).body;
     expect(all.total).toBe(2);
-    expect(all.workouts.map((w: any) => w.workout_id)).toEqual(["w-run", "w-str"]);
+    expect(all.workouts.map((w: any) => w.workout_id)).toEqual(["zepp:1760482800:cnVuLmRldmljZQ", "w-str"]);
     expect(all.workouts[1].strength_sets).toBe(3);
     expect(all.types).toEqual(expect.arrayContaining([{ type: "outdoor_running", n: 1 }, { type: "strength_training", n: 1 }]));
     expect((await api("workouts?type=strength_training")).body.workouts).toHaveLength(1);
     const page2 = (await api("workouts?limit=1&offset=1")).body;
     expect(page2.workouts.map((w: any) => w.workout_id)).toEqual(["w-str"]);
     expect(page2.total).toBe(2);
-    expect((await api("workouts?days=1")).body.workouts.map((w: any) => w.workout_id)).toEqual(["w-run"]);
+    expect((await api("workouts?days=1")).body.workouts.map((w: any) => w.workout_id)).toEqual(["zepp:1760482800:cnVuLmRldmljZQ"]);
   });
 
   it("workout detail: strength sets with names, unknown ids shown as unknown_<id>", async () => {
@@ -278,6 +278,12 @@ describe("dashboard API (temp database)", () => {
     expect(body.sets.map((s: any) => [s.exercise, s.known, s.reps])).toEqual([["Pull Up", true, 10], ["Bench Press", true, 12], ["unknown_9999", false, 8]]);
     expect(JSON.stringify(body)).not.toContain("raw_json");
     expect((await api("workouts/nope")).res.status).toBe(404);
+    // real ids contain colons, which browsers send percent-encoded
+    const run = await api("workouts/" + encodeURIComponent("zepp:1760482800:cnVuLmRldmljZQ"));
+    expect(run.res.status).toBe(200);
+    expect(run.body.workout).toMatchObject({ activity_type: "outdoor_running", distance_m: 10000 });
+    expect(run.body.sets).toEqual([]);
+    expect((await api("workouts/%E0%A4%A")).res.status).toBe(404); // malformed percent-encoding
   });
 
   it("exercises: lists every id and flags the unmapped ones", async () => {
@@ -332,8 +338,8 @@ describe("dashboard API input handling", () => {
     expect(injected.status).toBe(200);
     expect(injected.body.workouts).toEqual([]);
     expect((await q("workouts?type=" + encodeURIComponent("'; DROP TABLE workouts; --"))).body.total).toBe(0);
-    expect((await q("workouts/" + encodeURIComponent("w-run' OR '1'='1"))).status).toBe(404);
-    expect((await q("workouts/" + encodeURIComponent("w-run' OR '1'='1"))).body.error).toBe("Not found");
+    expect((await q("workouts/" + encodeURIComponent("zepp:1760482800:cnVuLmRldmljZQ' OR '1'='1"))).status).toBe(404);
+    expect((await q("workouts/" + encodeURIComponent("zepp:1760482800:cnVuLmRldmljZQ' OR '1'='1"))).body.error).toBe("Not found");
     expect((await q("workouts/..%2F..%2Fetc%2Fpasswd")).status).toBe(404);
     expect((await q("workouts?type=" + "a".repeat(100))).status).toBe(400);
     const after = await q("workouts");

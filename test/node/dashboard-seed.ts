@@ -24,7 +24,7 @@ export function seedDashboardDb(file: string): void {
   db.prepare("INSERT INTO sleep (started_at, sleep_date, ended_at, duration_s, score, stages_json, source_scope, updated_at) VALUES (?,?,?,?,?,?,?,?)")
     .run("2026-10-14T06:00:00.000Z", "2026-10-14", "2026-10-14T07:00:00.000Z", 3600, null, "not json", "device", u);
   const w = db.prepare("INSERT INTO workouts (workout_id, activity_type, zepp_type, started_at, started_date, ended_at, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, source_scope, summary_json, raw_json, strength_checked, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-  w.run("w-run", "outdoor_running", 1, "2026-10-14T23:00:00.000Z", "2026-10-15", "2026-10-15T00:00:00.000Z", 3600, 10000, 600, 150, 175, "device", "{}", "{\"secret\":\"raw-only\"}", 0, u);
+  w.run("zepp:1760482800:cnVuLmRldmljZQ", "outdoor_running", 1, "2026-10-14T23:00:00.000Z", "2026-10-15", "2026-10-15T00:00:00.000Z", 3600, 10000, 600, 150, 175, "device", "{}", "{\"secret\":\"raw-only\"}", 0, u);
   w.run("w-str", "strength_training", 52, "2026-10-13T01:00:00.000Z", "2026-10-13", "2026-10-13T02:00:00.000Z", 3600, null, 300, 120, 150, "device", "{}", "{}", 1, u);
   const s = db.prepare("INSERT INTO strength_sets (workout_id, seq, set_no, exercise, action_type, reps, weight_kg, duration_s, avg_hr_bpm) VALUES (?,?,?,?,?,?,?,?,?)");
   s.run("w-str", 0, 0, "unknown_64", 64, 10, null, 31, 98);
