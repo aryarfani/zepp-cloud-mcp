@@ -168,11 +168,31 @@ function htmlPage(title: string, body: string, status = 200, extra: Record<strin
       "cache-control": "no-store",
       "x-frame-options": "DENY",
       "x-content-type-options": "nosniff",
-      "referrer-policy": "no-referrer",
+      "referrer-policy": "same-origin",
       "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
       ...extra
     }
   });
+}
+/**
+ * Same-origin check for the consent POST. The expected origin comes from the configured public issuer,
+ * never from the request URL (behind nginx the request URL is http://127.0.0.1:PORT).
+ * - Origin present and not "null": must equal the expected origin.
+ * - Origin absent or "null" (Chrome sends "null" for same-origin form POSTs under Referrer-Policy: no-referrer):
+ *   use Sec-Fetch-Site (browser-controlled, not forgeable by pages): only "same-origin" passes;
+ *   else the Referer origin must match; with no signal at all the request is rejected.
+ * The per-form CSRF cookie/token check still runs afterwards.
+ */
+export function isSameOriginPost(request: Request, expectedOrigin: string): boolean {
+  const origin = request.headers.get("origin");
+  if (origin !== null && origin !== "null") return origin === expectedOrigin;
+  const site = request.headers.get("sec-fetch-site");
+  if (site !== null) return site.toLowerCase() === "same-origin";
+  const referer = request.headers.get("referer");
+  if (referer) {
+    try { return new URL(referer).origin === expectedOrigin; } catch { return false; }
+  }
+  return false;
 }
 function parseCookies(header: string | null): Record<string, string> {
   const out: Record<string, string> = {};
@@ -382,8 +402,7 @@ ${error ? `<p class="err">${escapeHtml(error)}</p>` : ""}
 
   async function authorizePost(request: Request): Promise<Response> {
     const issuer = issuerOf(request);
-    const origin = request.headers.get("origin");
-    if (origin !== null && origin !== new URL(issuer).origin) {
+    if (!isSameOriginPost(request, new URL(issuer).origin)) {
       return htmlPage("Authorization error", `<h1>Authorization error</h1><p class="err">Cross-origin request rejected.</p>`, 403);
     }
     const ct = request.headers.get("content-type") ?? "";

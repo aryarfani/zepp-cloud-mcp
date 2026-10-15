@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
-import { createOAuth, isAllowedRedirectUri, MemoryOAuthStore } from "../src/oauth";
+import { createOAuth, isAllowedRedirectUri, isSameOriginPost, MemoryOAuthStore } from "../src/oauth";
 
 const ISSUER = "https://zepp.example.test";
 const PASSWORD = "correct-horse-battery-staple";
@@ -300,7 +300,7 @@ describe("authorize endpoint hardening", () => {
     expect(wrong.headers.get("location")).toBeNull();
 
     const params = { response_type: "code", client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: "S256", password: PASSWORD, action: "approve", csrf: "x" };
-    const noCookie = await call("/authorize", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(params).toString() });
+    const noCookie = await call("/authorize", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: ISSUER }, body: new URLSearchParams(params).toString() });
     expect(noCookie.status).toBe(400);
     const foreign = await call("/authorize", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.test", cookie: "zepp_oauth_csrf=x" }, body: new URLSearchParams(params).toString() });
     expect(foreign.status).toBe(403);
@@ -324,7 +324,7 @@ describe("authorize endpoint hardening", () => {
     const csrf = /name="csrf" value="([^"]+)"/.exec(await page.text())![1]!;
     const res = await call("/authorize", {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", cookie: `zepp_oauth_csrf=${csrf}` },
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: `zepp_oauth_csrf=${csrf}`, origin: ISSUER },
       body: new URLSearchParams({ ...params, csrf, action: "deny" }).toString()
     });
     expect(res.status).toBe(303);
@@ -339,5 +339,68 @@ describe("OAuth disabled", () => {
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toBe("Bearer");
     expect((await app(new Request(ISSUER + "/register", { method: "POST" }))).status).toBe(404);
+  });
+});
+describe("authorize POST origin check", () => {
+  // Behind nginx the Node server sees http://127.0.0.1:8788, while the browser Origin is the public issuer.
+  const INTERNAL = "http://127.0.0.1:8788";
+  async function prepare() {
+    const store = new MemoryOAuthStore();
+    const oauth = createOAuth({ ownerPassword: PASSWORD, store, issuer: ISSUER });
+    const app = createApp({ env, oauth });
+    const reg = await (await app(new Request(INTERNAL + "/register", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client_name: "ChatGPT", redirect_uris: [REDIRECT], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"] })
+    }))).json() as { client_id: string };
+    const { challenge } = await pkce();
+    const params = { response_type: "code", client_id: reg.client_id, redirect_uri: REDIRECT, state: "s", code_challenge: challenge, code_challenge_method: "S256", resource: ISSUER + "/mcp" };
+    const page = await app(new Request(INTERNAL + "/authorize?" + new URLSearchParams(params)));
+    const csrf = /name="csrf" value="([^"]+)"/.exec(await page.text())![1]!;
+    const cookie = (page.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const post = (headers: Record<string, string>) => app(new Request(INTERNAL + "/authorize", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie, "x-real-ip": "203.0.113.10", ...headers },
+      body: new URLSearchParams({ ...params, csrf, password: "wrong-password", action: "approve" }).toString()
+    }));
+    return { post };
+  }
+  const rejected = async (res: Response) => res.status === 403 && (await res.text()).includes("Cross-origin request rejected");
+
+  it("accepts a same-origin browser POST with Origin equal to the issuer (proxy host mismatch)", async () => {
+    const { post } = await prepare();
+    const res = await post({ origin: ISSUER, "sec-fetch-site": "same-origin" });
+    expect(res.status).toBe(401);
+    expect(await res.text()).toContain("Incorrect password.");
+  });
+  it("rejects an Origin from another site, even with a valid CSRF cookie", async () => {
+    const { post } = await prepare();
+    expect(await rejected(await post({ origin: "https://evil.example" }))).toBe(true);
+    expect(await rejected(await post({ origin: "https://evil.example", "sec-fetch-site": "same-origin" }))).toBe(true);
+  });
+  it("accepts a missing Origin when Sec-Fetch-Site is same-origin", async () => {
+    const { post } = await prepare();
+    expect((await post({ "sec-fetch-site": "same-origin" })).status).toBe(401);
+  });
+  it("accepts Origin: null only with Sec-Fetch-Site same-origin (Chrome under no-referrer policy)", async () => {
+    const { post } = await prepare();
+    expect((await post({ origin: "null", "sec-fetch-site": "same-origin" })).status).toBe(401);
+    expect(await rejected(await post({ origin: "null", "sec-fetch-site": "cross-site" }))).toBe(true);
+    expect(await rejected(await post({ origin: "null" }))).toBe(true);
+  });
+  it("falls back to the Referer origin and rejects when there is no signal", async () => {
+    const { post } = await prepare();
+    expect((await post({ referer: ISSUER + "/authorize?x=1" })).status).toBe(401);
+    expect(await rejected(await post({ referer: "https://evil.example/page" }))).toBe(true);
+    expect(await rejected(await post({}))).toBe(true);
+  });
+  it("rejects cross-site and same-site Sec-Fetch-Site values", async () => {
+    const { post } = await prepare();
+    expect(await rejected(await post({ "sec-fetch-site": "cross-site" }))).toBe(true);
+    expect(await rejected(await post({ "sec-fetch-site": "same-site" }))).toBe(true);
+  });
+  it("isSameOriginPost uses the supplied expected origin only", () => {
+    const req = (h: Record<string, string>) => new Request("http://127.0.0.1:8788/authorize", { method: "POST", headers: h });
+    expect(isSameOriginPost(req({ origin: ISSUER }), ISSUER)).toBe(true);
+    expect(isSameOriginPost(req({ origin: "http://127.0.0.1:8788" }), ISSUER)).toBe(false);
   });
 });
