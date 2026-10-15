@@ -1,6 +1,6 @@
 import type { AppConfig } from "../config";
 import { withZeppCache } from "../cache";
-import { ZeppError } from "../errors";
+import { InputError, ZeppError } from "../errors";
 import { noData, ok, type Envelope } from "../response";
 import type { ServiceContext } from "../services";
 import { parseDateRange, type DateRange } from "../time";
@@ -335,7 +335,7 @@ export async function getMetricSeries(
   limit?: number
 ): Promise<Envelope<MetricPoint[]>> {
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > MAX_SERIES_LIMIT)) {
-    throw new ZeppError("unsupported", `Metric series limit must be an integer from 1 to ${MAX_SERIES_LIMIT}`);
+    throw new InputError(`limit must be an integer from 1 to ${MAX_SERIES_LIMIT}`);
   }
   const mapping = SERIES_METRICS[metric];
   const result = await fetchReviewedMetric(ctx, mapping.source, range);

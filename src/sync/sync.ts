@@ -1,6 +1,6 @@
 import { ZeppError } from "../errors";
 import type { ServiceContext } from "../services";
-import { addIsoDays, parseDateRange, previousIsoDate } from "../time";
+import { addIsoDays, parseDateRange, previousIsoDate, splitDateRange } from "../time";
 import { fetchBandData } from "../zepp/activity";
 import { fetchBloodPressureEntries } from "../zepp/blood-pressure";
 import { fetchChargeInsights, fetchChargeSamples } from "../zepp/charge";
@@ -95,8 +95,7 @@ export async function runSync(
   let failure: { kind: string; message: string } | undefined;
   try {
     // Newest window first, so the most useful data lands first if a long backfill is cut short.
-    for (let windowEnd = end; windowEnd >= start; windowEnd = addIsoDays(windowEnd, -chunkDays)) {
-      const windowStart = addIsoDays(windowEnd, -(chunkDays - 1)) < start ? start : addIsoDays(windowEnd, -(chunkDays - 1));
+    for (const { startDate: windowStart, endDate: windowEnd } of splitDateRange(start, end, chunkDays, true)) {
       const range = parseDateRange(windowStart, windowEnd, tz);
 
       await pause();

@@ -2,8 +2,9 @@ import { withZeppCache } from "../cache";
 import { ZeppError } from "../errors";
 import { noData, ok, type Envelope } from "../response";
 import type { ServiceContext } from "../services";
-import { addIsoDays, type DateRange } from "../time";
-import { BLOOD_PRESSURE_MAX_DAYS, buildZeppRequest } from "./endpoints";
+import { splitDateRange, type DateRange } from "../time";
+import { buildZeppRequest } from "./endpoints";
+import { WINDOW_DAYS } from "./windows";
 import { firstValue, localDateFromMs, numericValue, objectValue, parseTimestampMs, topLevelKeys } from "./normalize";
 import { scrubIdentity } from "./scrub";
 
@@ -78,16 +79,13 @@ export async function fetchBloodPressureEntries(
   let skipped = 0;
   // Windows of (max - 1) days, requested with one extra day: the exact edge semantics of `days`/`toDate` could not be
   // checked against real data (the account has none), and results are filtered to the requested range anyway.
-  const windowDays = BLOOD_PRESSURE_MAX_DAYS - 1;
-  for (let windowEnd = range.endDate; windowEnd >= range.startDate; windowEnd = addIsoDays(windowEnd, -windowDays)) {
-    const windowStart = addIsoDays(windowEnd, -(windowDays - 1)) < range.startDate ? range.startDate : addIsoDays(windowEnd, -(windowDays - 1));
-    const days = Math.round((Date.parse(windowEnd) - Date.parse(windowStart)) / 86_400_000) + 2;
+  for (const window of splitDateRange(range.startDate, range.endDate, WINDOW_DAYS.bloodPressure, true)) {
+    const days = Math.round((Date.parse(window.endDate) - Date.parse(window.startDate)) / 86_400_000) + 2;
     await pause();
-    const raw = await ctx.zepp.get(buildZeppRequest("bloodPressure", { days, toDate: windowEnd }));
+    const raw = await ctx.zepp.get(buildZeppRequest("bloodPressure", { days, toDate: window.endDate }));
     const n = normalizeBloodPressure(raw, "endpoint", tz);
     all.push(...n.entries); skipped += n.skipped;
-  }
-  await pause();
+  }  await pause();
   const eventRaw = await ctx.zepp.get(buildZeppRequest("v2Events", { eventType: "blood_pressure", subType: "real_data", from: range.fromMs, to: range.toMs, limit: 2000, reverse: 0 }));
   const events = normalizeBloodPressure(eventRaw, "event", tz);
   all.push(...events.entries); skipped += events.skipped;
@@ -99,10 +97,10 @@ export async function fetchBloodPressureEntries(
   return { entries, skipped };
 }
 
-export async function getBloodPressure(ctx: ServiceContext, range: DateRange): Promise<Envelope<BloodPressureReading[]>> {
+export async function getBloodPressure(ctx: ServiceContext, range: DateRange, pause: () => Promise<void> = async () => {}): Promise<Envelope<BloodPressureReading[]>> {
   const key = { userId: ctx.config.ZEPP_USER_ID, from: range.fromSec, to: range.toSec };
   const result = await withZeppCache("blood-pressure", key, 300, async () => {
-    const { entries, skipped } = await fetchBloodPressureEntries(ctx, range);
+    const { entries, skipped } = await fetchBloodPressureEntries(ctx, range, pause);
     return { readings: entries.map(e => e.reading), skipped };
   });
   const warnings = result.skipped ? [`Skipped ${result.skipped} blood pressure item(s) that did not contain a time with plausible systolic/diastolic values.`] : [];

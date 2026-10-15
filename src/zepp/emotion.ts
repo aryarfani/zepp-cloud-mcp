@@ -1,6 +1,6 @@
 import { withZeppCache } from "../cache";
 import { ZeppError } from "../errors";
-import { noData, ok, type Envelope } from "../response";
+import { noData, ok, partialResult, type Envelope } from "../response";
 import type { ServiceContext } from "../services";
 import type { DateRange } from "../time";
 import { buildZeppRequest } from "./endpoints";
@@ -75,28 +75,37 @@ export function normalizeEmotion(raw: unknown, timezone: string): { entries: Emo
 }
 
 /** Uncached; `pause` lets the sync space the two requests. */
-export async function fetchEmotionEntries(ctx: ServiceContext, range: DateRange, pause: () => Promise<void> = async () => {}): Promise<{ entries: EmotionEntry[]; skipped: number }> {
+/** Zepp page size used for both streams; a response this long may have been cut off. */
+const EVENT_LIMIT = 2000;
+
+export async function fetchEmotionEntries(ctx: ServiceContext, range: DateRange, pause: () => Promise<void> = async () => {}): Promise<{ entries: EmotionEntry[]; skipped: number; truncated: boolean }> {
   const tz = ctx.config.USER_TIMEZONE;
   await pause();
-  const spot = normalizeSpotStress(await ctx.zepp.get(buildZeppRequest("userEvents", {
-    userId: ctx.config.ZEPP_USER_ID, eventType: "single_stress", from: range.fromMs, to: range.toMs, limit: 2000, reverse: 0
-  })), tz);
+  const spotRaw = await ctx.zepp.get(buildZeppRequest("userEvents", {
+    userId: ctx.config.ZEPP_USER_ID, eventType: "single_stress", from: range.fromMs, to: range.toMs, limit: EVENT_LIMIT, reverse: 0
+  }));
+  const spot = normalizeSpotStress(spotRaw, tz);
   await pause();
-  const emotion = normalizeEmotion(await ctx.zepp.get(buildZeppRequest("v2Events", {
-    eventType: "Emotion", subType: "real_data", from: range.fromMs, to: range.toMs, limit: 2000, reverse: 0
-  })), tz);
+  const emotionRaw = await ctx.zepp.get(buildZeppRequest("v2Events", {
+    eventType: "Emotion", subType: "real_data", from: range.fromMs, to: range.toMs, limit: EVENT_LIMIT, reverse: 0
+  }));
+  const emotion = normalizeEmotion(emotionRaw, tz);
+  const count = (raw: unknown) => { const r = objectValue(raw); return r && Array.isArray(r.items) ? r.items.length : 0; };
   const entries = [...spot.entries, ...emotion.entries]
     .filter(e => e.ts_ms >= range.fromMs && e.ts_ms <= range.toMs)
     .sort((a, b) => a.ts_ms - b.ts_ms);
-  return { entries, skipped: spot.skipped + emotion.skipped };
+  return { entries, skipped: spot.skipped + emotion.skipped, truncated: count(spotRaw) >= EVENT_LIMIT || count(emotionRaw) >= EVENT_LIMIT };
 }
 
 export async function getEmotionEvents(ctx: ServiceContext, range: DateRange): Promise<Envelope<EmotionEvent[]>> {
   const key = { userId: ctx.config.ZEPP_USER_ID, from: range.fromSec, to: range.toSec };
   const result = await withZeppCache("emotion-events", key, 300, async () => {
-    const { entries, skipped } = await fetchEmotionEntries(ctx, range);
-    return { events: entries.map(e => e.event), skipped };
+    const { entries, skipped, truncated } = await fetchEmotionEntries(ctx, range);
+    return { events: entries.map(e => e.event), skipped, truncated };
   });
   const warnings = result.skipped ? [`Skipped ${result.skipped} event(s) that could not be read.`] : [];
+  if (result.truncated) {
+    return partialResult(result.events, range.timezone, [...warnings, `Zepp returns at most ${EVENT_LIMIT} events per stream per request and that limit was reached; use a shorter range to see the rest.`]);
+  }
   return result.events.length ? ok(result.events, range.timezone, { warnings }) : noData(range.timezone, warnings);
 }

@@ -2,11 +2,12 @@ import { withZeppCache } from "../cache";
 import { ZeppError } from "../errors";
 import { noData, ok, type Envelope } from "../response";
 import type { ServiceContext } from "../services";
-import type { DateRange } from "../time";
+import { parseDateRange, splitDateRange, type DateRange } from "../time";
 import { buildZeppRequest } from "./endpoints";
 import { firstValue, localDateFromMs, numericValue, objectValue, parseTimestampMs, topLevelKeys } from "./normalize";
 import { scrubIdentity } from "./scrub";
 import { downsampleStable, type DownsampleMeta } from "./workout-detail";
+import { WINDOW_DAYS } from "./windows";
 
 /**
  * Hybrid Charge (the watch's body-battery-like "Charge" score), from /v2/users/me/events eventType=Charge.
@@ -135,23 +136,45 @@ export function summarizeChargeDays(samples: readonly ChargeSample[]): ChargeDay
   });
 }
 
-export interface ChargeOptions { includeSamples?: boolean; maxPoints?: number }
+export interface ChargeOptions { includeSamples?: boolean; maxPoints?: number; pause?: () => Promise<void> }
 
+/**
+ * Long ranges are fetched in WINDOW_DAYS.charge windows (about 150 KB of samples per day) and reduced to per-day
+ * summaries window by window, so memory and response size stay bounded; samples, when requested, are downsampled per
+ * window and again over the merged set.
+ */
 export async function getHybridCharge(ctx: ServiceContext, range: DateRange, options: ChargeOptions = {}): Promise<Envelope<ChargeResult>> {
   const includeSamples = options.includeSamples === true;
   const maxPoints = Math.max(2, Math.min(2000, Math.floor(options.maxPoints ?? 288)));
+  const pause = options.pause ?? (async () => {});
   const key = { userId: ctx.config.ZEPP_USER_ID, from: range.fromSec, to: range.toSec, includeSamples, maxPoints };
   const result = await withZeppCache("hybrid-charge", key, 300, async (): Promise<ChargeResult> => {
-    const samples = await fetchChargeSamples(ctx, range);
-    const insights = await fetchChargeInsights(ctx, range);
+    const days: ChargeDay[] = [];
+    const insights: ChargeInsight[] = [];
+    const kept: ChargeSample[] = [];
+    let originalCount = 0;
+    const windows = splitDateRange(range.startDate, range.endDate, WINDOW_DAYS.charge);
+    for (let i = 0; i < windows.length; i++) {
+      const w = windows[i]!;
+      const sub = windows.length === 1 ? range : parseDateRange(w.startDate, w.endDate, range.timezone, WINDOW_DAYS.charge);
+      if (i > 0) await pause();
+      const samples = await fetchChargeSamples(ctx, sub);
+      await pause();
+      insights.push(...await fetchChargeInsights(ctx, sub));
+      days.push(...summarizeChargeDays(samples));
+      if (includeSamples) { originalCount += samples.length; kept.push(...downsampleStable(samples, maxPoints).points); }
+    }
+    // Windows never overlap, so duplicates are not expected; keying by day / insight keeps a repeated row harmless.
+    const uniqueDays = [...new Map(days.map(d => [d.date, d] as const)).values()].sort((a, b) => a.date.localeCompare(b.date));
+    const uniqueInsights = [...new Map(insights.map(i => [`${i.ts_ms}|${i.insight_type}|${i.insight_id}`, i] as const)).values()].sort((a, b) => a.ts_ms - b.ts_ms);
     const output: ChargeResult = {
-      days: summarizeChargeDays(samples),
-      insights: insights.map(i => ({ at: new Date(i.ts_ms).toISOString(), type: i.insight_type, insight: i.insight, insight_id: i.insight_id }))
+      days: uniqueDays,
+      insights: uniqueInsights.map(i => ({ at: new Date(i.ts_ms).toISOString(), type: i.insight_type, insight: i.insight, insight_id: i.insight_id }))
     };
     if (includeSamples) {
-      const sampled = downsampleStable(samples, maxPoints);
+      const sampled = downsampleStable(kept, maxPoints);
       output.samples = sampled.points.map(s => ({ time: new Date(s.ts_ms).toISOString(), total: s.total, mental: s.mental, physical: s.physical, status: s.status }));
-      output.samples_meta = sampled.meta;
+      output.samples_meta = { original_count: originalCount, returned_count: sampled.points.length, downsampled: originalCount > sampled.points.length };
     }
     return output;
   });

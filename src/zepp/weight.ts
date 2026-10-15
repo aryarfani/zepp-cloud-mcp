@@ -1,6 +1,6 @@
 import { withZeppCache } from "../cache";
 import { ZeppError } from "../errors";
-import { noData, ok, type Envelope } from "../response";
+import { noData, ok, partialResult, type Envelope } from "../response";
 import type { ServiceContext } from "../services";
 import type { DateRange } from "../time";
 import { buildZeppRequest } from "./endpoints";
@@ -22,6 +22,7 @@ export interface WeightRecord {
 export interface WeightEntry { record: WeightRecord; raw: unknown }
 
 const WEIGHT_LIMIT = 300;
+/** One request covers the whole range (up to 366 days); Zepp returns at most WEIGHT_LIMIT records per request. */
 
 function inRange(value: unknown, min: number, max: number): number | undefined {
   const n = numericValue(value);
@@ -77,5 +78,8 @@ export async function getWeight(ctx: ServiceContext, range: DateRange): Promise<
     return { records: entries.map(e => e.record), skipped };
   });
   const warnings = result.skipped ? [`Skipped ${result.skipped} weight record(s) without a plausible weight or time.`] : [];
+  if (result.records.length >= WEIGHT_LIMIT) {
+    return partialResult(result.records, range.timezone, [...warnings, `Zepp returns at most ${WEIGHT_LIMIT} weigh-ins per request and that limit was reached; use a shorter range to see the rest.`]);
+  }
   return result.records.length ? ok(result.records, range.timezone, { warnings }) : noData(range.timezone, warnings);
 }
