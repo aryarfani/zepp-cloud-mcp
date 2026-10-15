@@ -60,7 +60,8 @@ async function fetchWatch(ctx: ServiceContext, statistic: "SPORT_LOAD" | "VO2_MA
         statistic,
         startDay: range.startDate,
         endDay: range.endDate,
-        limit: 1000,
+        // Zepp rejects limit > 900 with HTTP 400 (verified live: 900 ok, 1000 fails), which made sport load / VO2max always fail before.
+        limit: 900,
         isReverse: false
       }));
       return normalizeWatchStatistic(raw, metric, range.timezone);
