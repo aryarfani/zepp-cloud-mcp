@@ -128,15 +128,18 @@ describe("workouts: infinite scroll", () => {
   it("respects the type filter and drops a stale page that arrives after the filter changed", async () => {
     const h = await boot("#/workouts");
     try {
-      const chip = (label: string) => [...h.doc.querySelectorAll(".wlist-pane .chips button")].find(b => (b.textContent ?? "").startsWith(label)) as HTMLButtonElement;
-      const pick = async (label: string) => { chip(label).click(); await wait(); };
+      const select = h.doc.querySelector(".wlist-pane select.wtype") as HTMLSelectElement;
+      const pick = async (label: string) => {
+        const opt = [...select.options].find(o => o.text.startsWith(label))!;
+        select.value = opt.value; select.dispatchEvent(new h.win.Event("change")); await wait();
+      };
       await pick("Walking");
       expect(pageFetches(h).at(-1)).toContain("type=walking");
       expect(rows(h)).toHaveLength(20);
       expect([...rows(h)].every(r => /Walking/.test(r.textContent ?? ""))).toBe(true);
       expect(text(h.doc.querySelector(".wlist > .wend"))).toBe("End of list");
 
-      expect(chip("Walking").getAttribute("aria-pressed")).toBe("true");
+      expect(select.selectedOptions[0]!.text).toMatch(/^Walking \(\d+\)$/);
       await pick("Outdoor running");
       expect(rows(h)).toHaveLength(25);
       const gate = h.hold();
@@ -229,12 +232,15 @@ describe("workouts: detail pane is independent of the list", () => {
     } finally { far.close(); }
   });
 
-  it("uses a fixed-height layout for the list view only, and the Exercises tab still renders", async () => {
+  it("uses a fixed-height layout for the list view only, and the Exercises page renders and the old tab URL redirects", async () => {
     const h = await boot("#/workouts");
     try {
       const content = h.doc.getElementById("content")!;
       expect(content.classList.contains("fit")).toBe(true);
       h.win.location.hash = "#/workouts/exercises"; await wait(250);
+      expect(h.win.location.hash).toBe("#/exercises"); // old links are redirected
+      expect(h.doc.querySelector("nav.menu a.active")!.getAttribute("data-route")).toBe("exercises");
+      expect(h.doc.querySelector(".tabs")).toBeNull();
       expect(content.classList.contains("fit")).toBe(false);
       expect(h.doc.querySelectorAll("#view tbody tr").length).toBeGreaterThan(0);
       expect(h.observers.at(0)?.disconnected).toBe(true); // the list observer is released when the list goes away

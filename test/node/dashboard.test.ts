@@ -221,9 +221,9 @@ describe("dashboard page", () => {
   it("has a left sidebar with exactly the approved items, no Strength entry, and Logout at the bottom", () => {
     const html = renderDashboardHtml("abc");
     const sidebar = /<aside id="sidebar"[\s\S]*?<\/aside>/.exec(html)![0];
-    expect(NAV_ITEMS.map(i => i.label)).toEqual(["Overview", "Sleep", "Activity", "Hybrid Charge", "Workouts", "Weight", "Sync"]);
+    expect(NAV_ITEMS.map(i => i.label)).toEqual(["Overview", "Sleep", "Activity", "Hybrid Charge", "Workouts", "Exercises", "Weight", "Sync"]);
     const links = [...sidebar.matchAll(/<a href="#\/([a-z]+)"[^>]*>[\s\S]*?<span>([^<]+)<\/span><\/a>/g)].map(m => [m[1], m[2]]);
-    expect(links).toEqual([["overview", "Overview"], ["sleep", "Sleep"], ["activity", "Activity"], ["charge", "Hybrid Charge"], ["workouts", "Workouts"], ["weight", "Weight"], ["sync", "Sync"]]);
+    expect(links).toEqual([["overview", "Overview"], ["sleep", "Sleep"], ["activity", "Activity"], ["charge", "Hybrid Charge"], ["workouts", "Workouts"], ["exercises", "Exercises"], ["weight", "Weight"], ["sync", "Sync"]]);
     expect(sidebar).not.toMatch(/strength/i);
     expect(html.replace(/<script[\s\S]*<\/script>/, "").replace(/<style[\s\S]*<\/style>/, "")).not.toMatch(/strength/i);
     expect(sidebar.startsWith('<aside id="sidebar" class="side"><div class="brand"><span class="logo">Z</span><span class="bname">Zepp</span>')).toBe(true);
@@ -237,11 +237,11 @@ describe("dashboard page", () => {
     expect(html).toContain('id="scrim"');
   });
 
-  it("routes by URL hash and merges strength into Workouts (list/detail plus an Exercises tab)", () => {
-    for (const view of ["overview", "sleep", "activity", "charge", "workouts", "weight", "sync"]) expect(DASHBOARD_JS).toContain(`${view}: view`);
+  it("routes by URL hash and merges strength into Workouts (list/detail) and gives Exercises its own page", () => {
+    for (const view of ["overview", "sleep", "activity", "charge", "workouts", "exercises", "weight", "sync"]) expect(DASHBOARD_JS).toContain(`${view}: view`);
     expect(DASHBOARD_JS).toContain('window.addEventListener("hashchange", route)');
     expect(DASHBOARD_JS).toContain('"#/workouts/"');
-    expect(DASHBOARD_JS).toContain("#/workouts/exercises");
+    expect(DASHBOARD_JS).toContain("#/exercises"); // old #/workouts/exercises links are redirected
     expect(DASHBOARD_JS).toContain("unknown"); // unmapped ids are highlighted
     expect(DASHBOARD_JS).not.toMatch(/lorem ipsum|TODO|FIXME/i);
   });

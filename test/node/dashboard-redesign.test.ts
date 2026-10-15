@@ -32,6 +32,8 @@ beforeAll(() => {
     const day = new Date(Date.UTC(2026, 8, 20) - i * 86400000); // September 2026
     ins.run(`s${i}`, type, code, day.toISOString(), day.toISOString().slice(0, 10), new Date(day.getTime() + 1800000).toISOString(), 1800, 3000, 200, 140, 160, "device", "{}", "{}", 0, "2026-10-15T00:00:00Z");
   }
+  const day0 = new Date(Date.UTC(2026, 9, 14, 3, 0));
+  ins.run("s-nodist", "yoga", 60, day0.toISOString(), day0.toISOString().slice(0, 10), new Date(day0.getTime() + 1800000).toISOString(), 1800, null, 100, 90, 110, "device", "{}", "{}", 0, "2026-10-15T00:00:00Z");
   db.close();
   const store = new ZeppStore(file);
   store.saveWorkoutAnalysis(RUN, analyzeWorkout(runDetail(), RUN_HISTORY_EXTRA), "2026-10-15T00:00:00Z");
@@ -98,8 +100,8 @@ describe("sidebar", () => {
   });
 });
 
-describe("workouts list: compact rows, chips and search", () => {
-  it("renders dense rows with sport icons, an All chip plus one chip per sport, and keeps strength sets inline", async () => {
+describe("workouts list: compact rows, sport dropdown and search", () => {
+  it("renders dense rows with sport icons, a sport dropdown with counts, and the primary value on the right", async () => {
     const h = await boot("#/workouts");
     try {
       expect(h.errors).toEqual([]);
@@ -109,17 +111,40 @@ describe("workouts list: compact rows, chips and search", () => {
         expect(r.querySelector(".sico svg")).not.toBeNull();
         expect(r.querySelector(".wmain .t")).not.toBeNull();
         expect(text(r.querySelector(".wmain .sub"))).toMatch(/\d{1,2} \w{3} \u00b7 \d\d:\d\d/);
-        expect(r.querySelector(".r")!.children.length).toBe(2);
+        expect(text(r.querySelector(".wmain .sub"))).not.toMatch(/sets?\b/); // no set count on the left
+        expect(r.querySelector(".r .pv")).not.toBeNull();
       }
+      // distance sports: km in bold on top, duration muted underneath
+      const run = rows.find(r => /Outdoor running/.test(text(r)))!;
+      expect(text(run.querySelector(".r .pv"))).toMatch(/^\d+\.\d\d km$/);
+      expect(text(run.querySelector(".r .sv"))).toMatch(/^\d+h \d\dm$|^\d+m$/);
+      // strength: sets are the primary value, duration underneath
       const strength = rows.find(r => /Strength/.test(text(r)))!;
-      expect(text(strength)).toMatch(/3 sets/);
+      expect(text(strength.querySelector(".r .pv"))).toBe("3 sets");
+      expect(text(strength.querySelector(".r .sv"))).toMatch(/\d/);
+      // neither distance nor sets: duration is the only (primary) value
+      const plain = rows.find(r => r.getAttribute("href") === "#/workouts/s-nodist")!;
+      expect(plain.querySelector(".r")!.children.length).toBe(1);
+      expect(text(plain.querySelector(".r .pv"))).toBe("30m");
       expect(strength.querySelector(".sico")!.classList.contains("f-str")).toBe(true);
       expect(rows.find(r => /Walking/.test(text(r)))!.querySelector(".sico")!.classList.contains("f-walk")).toBe(true);
       expect(rows.find(r => /Pool swimming/.test(text(r)))!.querySelector(".sico")!.classList.contains("f-swim")).toBe(true);
-      const chips = [...h.doc.querySelectorAll(".chips button")];
-      expect(text(chips[0]!)).toMatch(/^All/);
-      expect(chips[0]!.getAttribute("aria-pressed")).toBe("true");
-      expect(chips.length).toBeGreaterThanOrEqual(5);
+      expect(h.doc.querySelector(".chips")).toBeNull();
+      const select = h.doc.querySelector(".wfilter select.wtype") as Element;
+      expect(select.getAttribute("aria-label")).toBe("Filter by sport");
+      const options = [...select.options] as Element[];
+      expect(options[0].value).toBe("");
+      expect(options[0].text).toMatch(/^All sports \(\d+\)$/);
+      expect(options.length).toBeGreaterThanOrEqual(6);
+      for (const o of options) expect(o.text).toMatch(/\(\d+\)$/);
+      expect(select.value).toBe("");
+      // the dropdown sits next to the search box
+      expect(select.parentElement!.previousElementSibling!.querySelector("input[type=search]")).not.toBeNull();
+      // filtering by choosing an option goes through the existing type API param
+      const walking = options.find(o => /^Walking/.test(o.text))!;
+      select.value = walking.value; select.dispatchEvent(new h.win.Event("change")); await wait(150);
+      expect(h.fetches.at(-1)).toContain("type=walking");
+      expect([...h.doc.querySelectorAll(".wlist .wrow")].every(r => /Walking/.test(text(r)))).toBe(true);
       expect(h.doc.querySelector(".wlist-pane input[type=search]")!.getAttribute("aria-label")).toBe("Search workouts");
     } finally { h.close(); }
   });
@@ -252,7 +277,7 @@ describe("workout detail: hero, tiles and the route map", () => {
 
 describe("every route renders with fixture data", () => {
   it("shows skeletons first and then real content without JS errors on all views", async () => {
-    const routes = ["#/overview", "#/sleep", "#/activity", "#/charge", "#/workouts", "#/workouts/exercises", "#/workouts/w-str", "#/workouts/" + encodeURIComponent(RUN), "#/weight", "#/sync"];
+    const routes = ["#/overview", "#/sleep", "#/activity", "#/charge", "#/workouts", "#/exercises", "#/workouts/exercises", "#/workouts/w-str", "#/workouts/" + encodeURIComponent(RUN), "#/weight", "#/sync"];
     for (const hash of routes) {
       const h = await boot(hash);
       try {
@@ -265,5 +290,31 @@ describe("every route renders with fixture data", () => {
         expect(h.fetches.every(u => u.startsWith("/dashboard/api/")), hash).toBe(true);
       } finally { h.close(); }
     }
+  });
+});
+
+describe("exercises page and sidebar", () => {
+  it("has Exercises as its own sidebar item after Workouts, with a different icon, and no tab bar on Workouts", async () => {
+    const h = await boot("#/workouts");
+    try {
+      const links = [...h.doc.querySelectorAll("nav.menu a")] as Element[];
+      expect(links.map(a => a.getAttribute("data-route"))).toEqual(["overview", "sleep", "activity", "charge", "workouts", "exercises", "weight", "sync"]);
+      const paths = Object.fromEntries(links.map(a => [a.getAttribute("data-route"), a.querySelector("path")!.getAttribute("d")]));
+      expect(paths.exercises).not.toBe(paths.workouts);
+      expect(h.doc.querySelector(".tabs")).toBeNull();
+      expect(h.doc.querySelector(".split")).not.toBeNull();
+      h.win.location.hash = "#/exercises"; await wait(300);
+      expect(h.doc.querySelector("nav.menu a.active")!.getAttribute("data-route")).toBe("exercises");
+      expect(text(h.doc.getElementById("title"))).toBe("Exercises");
+      expect(h.doc.querySelectorAll("#view tbody tr").length).toBeGreaterThan(0);
+      expect(h.doc.getElementById("content")!.classList.contains("fit")).toBe(false);
+      expect(h.errors).toEqual([]);
+    } finally { h.close(); }
+    const old = await boot("#/workouts/exercises");
+    try {
+      expect(old.win.location.hash).toBe("#/exercises");
+      expect(old.doc.querySelector("nav.menu a.active")!.getAttribute("data-route")).toBe("exercises");
+      expect(old.doc.querySelectorAll("#view tbody tr").length).toBeGreaterThan(0);
+    } finally { old.close(); }
   });
 });
