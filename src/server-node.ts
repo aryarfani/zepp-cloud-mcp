@@ -1,10 +1,9 @@
 import 'dotenv/config';
 import http from 'node:http';
-import { createMcpHandler } from 'agents/mcp/server';
-import { requireBearer } from './auth';
-import { parseConfig } from './config';
-import { createZeppMcpServer } from './mcp/server';
-import { createServices } from './services';
+import path from 'node:path';
+import { createApp } from './app';
+import { createOAuth } from './oauth';
+import { FileOAuthStore } from './oauth-file-store';
 if (typeof (globalThis as any).caches === 'undefined') {
   const mem = new Map<string, Response>();
   (globalThis as any).caches = {
@@ -24,6 +23,7 @@ function loadEnv(): Env {
     USER_TIMEZONE: process.env.USER_TIMEZONE || 'Asia/Jakarta',
   } as Env;
 }
+const MAX_BODY = 1024 * 1024;
 function toFetchRequest(nodeReq: http.IncomingMessage, body: Buffer): Request {
   const host = nodeReq.headers.host || 'localhost';
   const proto = (nodeReq.headers['x-forwarded-proto'] as string) || 'https';
@@ -38,42 +38,34 @@ function toFetchRequest(nodeReq: http.IncomingMessage, body: Buffer): Request {
   const hasBody = body.length > 0 && method !== 'GET' && method !== 'HEAD';
   return new Request(url, { method, headers, body: hasBody ? body : undefined } as any);
 }
-async function handleNodeRequest(nodeReq: http.IncomingMessage, nodeRes: http.ServerResponse, env: Env) {
+const PORT = parseInt(process.env.PORT || '8788', 10);
+const env = loadEnv();
+if (!env.MCP_SECRET || !env.ZEPP_APP_TOKEN || !env.ZEPP_USER_ID) {
+  console.warn('[zepp] WARNING: secrets not set - /mcp will return 500 until env is configured');
+}
+const ownerPassword = process.env.OAUTH_OWNER_PASSWORD || '';
+let oauth = null as ReturnType<typeof createOAuth> | null;
+if (ownerPassword.length >= 16) {
+  const storePath = process.env.OAUTH_STORE_PATH || path.join(process.cwd(), 'data', 'oauth-store.json');
+  oauth = createOAuth({ ownerPassword, store: new FileOAuthStore(storePath), issuer: process.env.OAUTH_ISSUER || undefined });
+  console.log('[zepp] OAuth enabled');
+} else {
+  console.warn('[zepp] OAUTH_OWNER_PASSWORD missing or shorter than 16 chars - OAuth disabled, static bearer only');
+}
+const app = createApp({ env, oauth, port: PORT });
+async function handleNodeRequest(nodeReq: http.IncomingMessage, nodeRes: http.ServerResponse) {
   const chunks: Buffer[] = [];
-  for await (const chunk of nodeReq) chunks.push(chunk as Buffer);
-  const body = Buffer.concat(chunks);
-  const request = toFetchRequest(nodeReq, body);
-  const url = new URL(request.url);
-  if (url.pathname === '/' && request.method === 'GET') {
-    nodeRes.writeHead(200, { 'content-type': 'application/json' });
-    nodeRes.end(JSON.stringify({ service: 'zepp-cloud-mcp', version: '0.1.0', runtime: 'node' }));
-    return;
+  let size = 0;
+  for await (const chunk of nodeReq) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY) {
+      nodeRes.writeHead(413, { 'content-type': 'text/plain' });
+      nodeRes.end('Payload Too Large');
+      return;
+    }
+    chunks.push(chunk as Buffer);
   }
-  if (url.pathname === '/health' && request.method === 'GET') {
-    nodeRes.writeHead(200, { 'content-type': 'application/json' });
-    nodeRes.end(JSON.stringify({ status: 'ok', runtime: 'node', port: PORT }));
-    return;
-  }
-  if (url.pathname !== '/mcp') {
-    nodeRes.writeHead(404, { 'content-type': 'text/plain' });
-    nodeRes.end('Not Found');
-    return;
-  }
-  if (!requireBearer(request, env.MCP_SECRET)) {
-    nodeRes.writeHead(401, { 'www-authenticate': 'Bearer', 'content-type': 'text/plain' });
-    nodeRes.end('Unauthorized');
-    return;
-  }
-  let services;
-  try { services = createServices(parseConfig(env as any)); }
-  catch (e: any) {
-    nodeRes.writeHead(500, { 'content-type': 'application/json' });
-    nodeRes.end(JSON.stringify({ error: 'Worker configuration is invalid', detail: e?.message }));
-    return;
-  }
-  const handler = createMcpHandler(() => createZeppMcpServer(services), { route: '/mcp', corsOptions: false });
-  const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
-  const response = await handler(request, env, ctx);
+  const response = await app(toFetchRequest(nodeReq, Buffer.concat(chunks)));
   nodeRes.writeHead(response.status, Object.fromEntries(response.headers.entries()));
   if (response.body) {
     const ab = await response.arrayBuffer();
@@ -82,13 +74,8 @@ async function handleNodeRequest(nodeReq: http.IncomingMessage, nodeRes: http.Se
     nodeRes.end();
   }
 }
-const PORT = parseInt(process.env.PORT || '8788', 10);
-const env = loadEnv();
-if (!env.MCP_SECRET || !env.ZEPP_APP_TOKEN || !env.ZEPP_USER_ID) {
-  console.warn('[zepp] WARNING: secrets not set - /mcp will return 500 until env is configured');
-}
 const server = http.createServer((req, res) => {
-  handleNodeRequest(req, res, env).catch(err => {
+  handleNodeRequest(req, res).catch(err => {
     console.error('[zepp] unhandled', err);
     if (!res.headersSent) { res.writeHead(500); res.end('Internal Error'); }
   });

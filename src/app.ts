@@ -1,0 +1,50 @@
+import { createMcpHandler } from "agents/mcp/server";
+import { requireBearer } from "./auth";
+import { parseConfig } from "./config";
+import { createZeppMcpServer } from "./mcp/server";
+import { createServices } from "./services";
+import type { OAuthProvider } from "./oauth";
+
+export interface AppDeps {
+  env: Env;
+  /** null disables OAuth (static bearer only). */
+  oauth: OAuthProvider | null;
+  port?: number;
+}
+
+export function createApp(deps: AppDeps): (request: Request) => Promise<Response> {
+  const { env, oauth } = deps;
+  return async function handle(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === "/" && request.method === "GET") {
+      return Response.json({ service: "zepp-cloud-mcp", version: "0.1.0", runtime: "node" });
+    }
+    if (url.pathname === "/health" && request.method === "GET") {
+      return Response.json({ status: "ok", runtime: "node", port: deps.port ?? 8788 });
+    }
+    if (oauth) {
+      const res = await oauth.handle(request);
+      if (res) return res;
+    }
+    if (url.pathname !== "/mcp") return new Response("Not Found", { status: 404, headers: { "content-type": "text/plain" } });
+
+    const hasStatic = env.MCP_SECRET.length > 0 && requireBearer(request, env.MCP_SECRET);
+    if (!hasStatic) {
+      const oauthOk = oauth ? await oauth.authenticate(request) : false;
+      if (!oauthOk) {
+        const sentToken = (request.headers.get("authorization") ?? "").startsWith("Bearer ");
+        const challenge = oauth ? oauth.challengeHeader(request, sentToken) : "Bearer";
+        return new Response("Unauthorized", { status: 401, headers: { "www-authenticate": challenge, "content-type": "text/plain" } });
+      }
+    }
+
+    let services;
+    try { services = createServices(parseConfig(env)); }
+    catch (e: any) {
+      return Response.json({ error: "Worker configuration is invalid", detail: e?.message }, { status: 500 });
+    }
+    const handler = createMcpHandler(() => createZeppMcpServer(services), { route: "/mcp", corsOptions: false });
+    const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
+    return handler(request, env, ctx);
+  };
+}
