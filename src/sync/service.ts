@@ -75,7 +75,7 @@ export function createSyncService(deps: {
         tables: {
           daily_summary: stats.daily_summary, sleep: stats.sleep, workouts: stats.workouts, strength_sets: stats.strength_sets,
           weight_records: stats.weight_records, blood_pressure: stats.blood_pressure, charge_samples: stats.charge_samples,
-          charge_insights: stats.charge_insights, emotion_events: stats.emotion_events, event_streams: stats.event_streams, sync_runs: stats.sync_runs
+          charge_insights: stats.charge_insights, emotion_events: stats.emotion_events, recovery_days: stats.recovery_days, event_streams: stats.event_streams, sync_runs: stats.sync_runs
         },
         db: { file: config.dbPath, schema_version: stats.schema_version, size_bytes: stats.db_bytes }
       };

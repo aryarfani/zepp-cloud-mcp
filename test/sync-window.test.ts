@@ -63,8 +63,8 @@ describe("sync config and steps", () => {
   });
 
   it("lists the steps in order, leaving out disabled ones", () => {
-    expect(enabledSteps({}).map(s => s.label)).toEqual(["Daily & sleep", "Workouts", "Strength", "Hybrid Charge", "Emotion", "Blood pressure", "Routes (workout details)", "Weight", "Streams"]);
-    expect(enabledSteps({ skipSteps: new Set(["emotion", "weight"]) }).map(s => s.id)).toEqual(["daily_sleep", "workouts", "strength", "charge", "blood_pressure", "routes", "streams"]);
-    expect(SYNC_STEPS.length).toBe(9);
+    expect(enabledSteps({}).map(s => s.label)).toEqual(["Daily & sleep", "Workouts", "Strength", "Hybrid Charge", "Emotion", "Blood pressure", "Recovery", "Routes (workout details)", "Weight", "Streams"]);
+    expect(enabledSteps({ skipSteps: new Set(["emotion", "weight"]) }).map(s => s.id)).toEqual(["daily_sleep", "workouts", "strength", "charge", "blood_pressure", "recovery", "routes", "streams"]);
+    expect(SYNC_STEPS.length).toBe(10);
   });
 });

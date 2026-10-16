@@ -10,6 +10,8 @@
 // (events, easy run/walk) and id 0 ("unassigned") have no entry and contribute nothing. 1133 source exercises, 1121 with muscle data.
 // This file is derived from AGPL-3.0 material. The project owner decided to include it knowingly.
 // The muscles are an ESTIMATE taken from the exercise id, not measured by the watch.
+// Cross-checked on 2026-10-16 against the live Zepp `sport/config/muscle` endpoint (1134 entries): same ids, names and body positions,
+// so the live config adds nothing to refine this mapping and this catalog stays the source (it also works offline).
 //
 // Each entry is [primary, secondary], space separated muscle ids from MUSCLE_IDS.
 export const MUSCLE_IDS = ["abs", "front_delts", "chest", "obliques", "biceps", "forearms", "quads", "calves", "lats", "triceps", "glutes", "hamstrings", "shins", "hip_flexors", "upper_back", "lower_back", "rear_delts", "neck", "inner_thighs", "outer_hips", "lower_abs"] as const;

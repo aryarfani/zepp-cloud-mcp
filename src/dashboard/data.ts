@@ -17,7 +17,7 @@ const STAGES = ["deep", "light", "rem", "awake"] as const;
 /** Tables shown in the status footer: [table, date column]. A fixed list, never taken from a request. */
 const COVERAGE: ReadonlyArray<readonly [string, string]> = [
   ["daily_summary", "date"], ["sleep", "sleep_date"], ["workouts", "started_date"], ["weight_records", "date"],
-  ["blood_pressure", "date"], ["charge_samples", "date"], ["emotion_events", "date"]
+  ["blood_pressure", "date"], ["charge_samples", "date"], ["emotion_events", "date"], ["recovery_days", "date"]
 ];
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -154,6 +154,82 @@ export class DashboardData {
       out.insights = this.all("SELECT ts_ms, insight_type, insight, insight_id FROM charge_insights WHERE date = ? ORDER BY ts_ms", date);
     }
     return out;
+  }
+
+  // ---- recovery -----------------------------------------------------------------------------------------------------
+  /** Per-date HRV, resting HR, readiness and SpO2 dips for the Recovery page. Only what is stored: missing figures stay null. */
+  recovery(days: number) {
+    if (!this.available()) return { available: false, days };
+    const start = this.since(days);
+    const end = this.today();
+    let rec: Row[] = [];
+    try {
+      rec = this.all(
+        "SELECT date, hrv_ms, hrv_samples, readiness, sleep_hrv, sleep_rhr, hrv_score, rhr_score, hrv_baseline, rhr_baseline, odi, odi_events, spo2_dips, spo2_low FROM recovery_days WHERE date >= ? AND date <= ? ORDER BY date", start, end);
+    } catch { /* database from before the recovery table: nothing stored yet */ }
+    const rest = new Map(this.all("SELECT date, resting_hr_bpm FROM daily_summary WHERE date >= ? AND date <= ? AND resting_hr_bpm IS NOT NULL", start, end).map(r => [String(r.date), num(r.resting_hr_bpm)]));
+    const byDate = new Map(rec.map(r => [String(r.date), r]));
+    const dates = [...new Set([...byDate.keys(), ...rest.keys()])].sort();
+    const series = dates.map(date => {
+      const r = byDate.get(date);
+      const hrv = num(r?.hrv_ms) ?? num(r?.sleep_hrv);
+      return {
+        date, hrv_ms: hrv, hrv_source: num(r?.hrv_ms) !== null ? "overnight_samples" : hrv !== null ? "readiness" : null,
+        resting_hr_bpm: rest.get(date) ?? num(r?.sleep_rhr), resting_hr_source: rest.has(date) ? "daily" : num(r?.sleep_rhr) !== null ? "readiness" : null,
+        readiness: num(r?.readiness), hrv_baseline: num(r?.hrv_baseline), rhr_baseline: num(r?.rhr_baseline),
+        odi: num(r?.odi), odi_events: num(r?.odi_events), spo2_dips: num(r?.spo2_dips), spo2_low: num(r?.spo2_low)
+      };
+    });
+    const nums = (k: "hrv_ms" | "resting_hr_bpm" | "readiness" | "odi") => series.map(x => x[k]).filter((v): v is number => v !== null);
+    const mean = (v: number[]) => (v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null);
+    const lastReadiness = [...series].reverse().find(x => x.readiness !== null);
+    const dipNights = series.filter(x => x.spo2_dips !== null);
+    return {
+      available: true, days, start, end, timezone: this.timezone, series,
+      summary: {
+        avg_hrv_ms: mean(nums("hrv_ms")), hrv_days: nums("hrv_ms").length,
+        avg_resting_hr_bpm: mean(nums("resting_hr_bpm")), resting_hr_days: nums("resting_hr_bpm").length,
+        avg_readiness: mean(nums("readiness")), readiness_days: nums("readiness").length,
+        latest_readiness: lastReadiness ? { date: lastReadiness.date, value: lastReadiness.readiness } : null,
+        spo2_dips_total: dipNights.length ? dipNights.reduce((a, x) => a + (x.spo2_dips ?? 0), 0) : null,
+        spo2_nights: dipNights.length, avg_odi: mean(nums("odi")),
+        spo2_low: dipNights.reduce<number | null>((m, x) => (x.spo2_low !== null && (m === null || x.spo2_low < m) ? x.spo2_low : m), null)
+      }
+    };
+  }
+
+  // ---- training -----------------------------------------------------------------------------------------------------
+  /** Week/month totals and weekly distance for the last 8 weeks, from the stored workouts (weeks start on Monday, local dates). */
+  training(weeks = 8) {
+    if (!this.available()) return { available: false };
+    const today = this.today();
+    const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7; // Monday = 0
+    const thisWeek = addIsoDays(today, -dow);
+    const firstWeek = addIsoDays(thisWeek, -7 * (weeks - 1));
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const prevMonthEnd = addIsoDays(monthStart, -1);
+    const prevMonthStart = `${prevMonthEnd.slice(0, 7)}-01`;
+    const total = (from: string, to: string) => {
+      const r = this.get("SELECT COUNT(*) AS n, COALESCE(SUM(distance_m), 0) AS dist, COALESCE(SUM(duration_s), 0) AS dur, COALESCE(SUM(calories_kcal), 0) AS kcal FROM workouts WHERE started_date >= ? AND started_date <= ?", from, to);
+      return { from, to, count: Number(r?.n ?? 0), distance_m: Number(r?.dist ?? 0), duration_s: Number(r?.dur ?? 0), calories_kcal: Number(r?.kcal ?? 0) };
+    };
+    const rows = this.all("SELECT started_date, distance_m, duration_s FROM workouts WHERE started_date >= ? AND started_date <= ?", firstWeek, today);
+    const series = Array.from({ length: weeks }, (_, i) => ({ week_start: addIsoDays(firstWeek, 7 * i), distance_m: 0, duration_s: 0, count: 0 }));
+    for (const r of rows) {
+      const i = Math.floor((Date.parse(`${String(r.started_date)}T00:00:00Z`) - Date.parse(`${firstWeek}T00:00:00Z`)) / (7 * 86_400_000));
+      const w = series[i];
+      if (!w) continue;
+      w.count++; w.distance_m += num(r.distance_m) ?? 0; w.duration_s += num(r.duration_s) ?? 0;
+    }
+    const sports = this.all(
+      "SELECT activity_type, COUNT(*) AS n, COALESCE(SUM(duration_s), 0) AS dur, COALESCE(SUM(distance_m), 0) AS dist FROM workouts WHERE started_date >= ? AND started_date <= ? GROUP BY activity_type ORDER BY dur DESC LIMIT 6", monthStart, today)
+      .map(r => ({ activity_type: String(r.activity_type), count: Number(r.n), duration_s: Number(r.dur), distance_m: Number(r.dist) }));
+    return {
+      available: true, timezone: this.timezone, today, week_start: thisWeek,
+      this_week: total(thisWeek, today), last_week: total(addIsoDays(thisWeek, -7), addIsoDays(thisWeek, -1)),
+      this_month: total(monthStart, today), last_month: total(prevMonthStart, prevMonthEnd),
+      weeks: series, sports
+    };
   }
 
   // ---- workouts -----------------------------------------------------------------------------------------------------

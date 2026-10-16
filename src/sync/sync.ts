@@ -5,6 +5,7 @@ import { fetchBandData } from "../zepp/activity";
 import { fetchBloodPressureEntries } from "../zepp/blood-pressure";
 import { fetchChargeInsights, fetchChargeSamples } from "../zepp/charge";
 import { fetchEmotionEntries } from "../zepp/emotion";
+import { fetchRecoveryDays } from "../zepp/recovery-days";
 import { probeStreams } from "../zepp/event-manifest";
 import { localDateFromMs } from "../zepp/normalize";
 import { selectSleepForRange } from "../zepp/sleep";
@@ -195,6 +196,13 @@ export async function runSync(
           if (skipped) counts.warnings++;
         });
       }
+      if (stepOn("recovery")) {
+        report("recovery");
+        await optionalStep("recovery", async () => {
+          const rows = await fetchRecoveryDays(ctx, range, pause);
+          counts.recovery_days += store.upsertRecoveryDays(rows, new Date(now()).toISOString());
+        });
+      }
     }
     chunk = undefined;
 
@@ -244,7 +252,7 @@ export async function runSync(
   const ok = failure === undefined;
   const status = failure ? failure.kind : counts.warnings > 0 ? "ok_with_warnings" : "ok";
   store.finishRun(runId, { ok, status, counts, ...(failure ? { error_kind: failure.kind, error_message: failure.message } : {}) }, new Date(finishedMs).toISOString());
-  log(`sync #${runId} ${status}: daily ${counts.daily}, sleep ${counts.sleep}, workouts ${counts.workouts}, strength sets ${counts.strength_sets}, weight ${counts.weight}, bp ${counts.blood_pressure}, charge ${counts.charge_samples}/${counts.charge_insights}, emotion ${counts.emotion_events}, streams ${counts.event_streams}, warnings ${counts.warnings}, ${finishedMs - startedMs} ms`);
+  log(`sync #${runId} ${status}: daily ${counts.daily}, sleep ${counts.sleep}, workouts ${counts.workouts}, strength sets ${counts.strength_sets}, weight ${counts.weight}, bp ${counts.blood_pressure}, charge ${counts.charge_samples}/${counts.charge_insights}, emotion ${counts.emotion_events}, recovery ${counts.recovery_days}, streams ${counts.event_streams}, warnings ${counts.warnings}, ${finishedMs - startedMs} ms`);
   return {
     run_id: runId, trigger, ok, status, range: { start, end }, window: { mode: win.mode, days, since: win.since, truncated: win.truncated }, counts, duration_ms: finishedMs - startedMs,
     ...(failure ? { error: failure } : {})

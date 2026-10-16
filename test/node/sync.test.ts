@@ -132,7 +132,7 @@ describe("sync service", () => {
       enabled: true, running: false,
       last_run: { ok: true, status: "ok", trigger: "manual" },
       tables: { workouts: { rows: 2 }, strength_sets: { rows: 4, workouts: 1 } },
-      db: { schema_version: 3 }
+      db: { schema_version: 4 }
     });
     expect(status.last_success_at).toBeTruthy();
     expect(status.schedule.timezone).toBe(config.USER_TIMEZONE);

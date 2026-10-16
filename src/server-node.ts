@@ -11,7 +11,8 @@ import { parseSyncConfig } from './sync/config';
 import { createSyncService, type SyncService } from './sync/service';
 import { startSyncScheduler } from './sync/scheduler';
 import { createMemoryCache, DEFAULT_MAX_CACHE_ENTRIES } from './memory-cache';
-import { createDashboard } from './dashboard/handler';
+import { createDashboard, type DashboardLive } from './dashboard/handler';
+import { fetchPlannedWorkouts, fetchWatchLastSync } from './zepp/live-probe';
 import { createAnalysisLoader } from './dashboard/analysis-loader';
 import { DashboardData } from './dashboard/data';
 if (typeof (globalThis as any).caches === 'undefined') {
@@ -61,6 +62,7 @@ const syncConfig = parseSyncConfig(process.env);
 let syncService: SyncService | null = null;
 let analysisLoader: ReturnType<typeof createAnalysisLoader> | undefined;
 let manualSyncReady = false;
+let liveProbes: DashboardLive | undefined;
 try {
   const store = new ZeppStore(path.resolve(syncConfig.dbPath));
   try {
@@ -80,6 +82,9 @@ try {
     analysisLoader = createAnalysisLoader({ ctx: zeppCtx, store, log: m => console.log('[zepp] ' + m) });
     syncService = createSyncService({ ctx: zeppCtx, store, config: syncConfig, log: m => console.log('[zepp] ' + m) });
     manualSyncReady = true;
+    const probeCtx = zeppCtx;
+    // Read-only probes for the Training page (watch last-sync time, planned workouts); cached by the dashboard, never start a sync.
+    liveProbes = { watchLastSync: () => fetchWatchLastSync(probeCtx), plannedWorkouts: () => fetchPlannedWorkouts(probeCtx) };
     startSyncScheduler({ service: syncService, lastSuccessAt: () => store.lastSuccessfulRun()?.finished_at ?? null, timezone: env.USER_TIMEZONE, log: m => console.log('[zepp] ' + m) });
   } else {
     console.warn('[zepp] daily sync not started (Zepp credentials missing or invalid); sync_status still reads the store');
@@ -103,6 +108,7 @@ if (ownerPassword.length >= 16) {
     ...(analysisLoader ? { loadAnalysis: analysisLoader } : {}),
     ...(syncService ? { syncStatus: () => syncService!.status() } : {}),
     // "Sync now" on the dashboard: the same read-only sync routine with the smart window (last success minus SYNC_OVERLAP_DAYS, at most 31 days; the backfill on a first run), trigger "manual"; the caller chooses no dates
+    ...(liveProbes ? { live: liveProbes } : {}),
     ...(syncService ? { startSync: () => {
       if (!manualSyncReady || !syncService) return 'unavailable' as const;
       if (syncService.isRunning()) return 'running' as const;

@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { BloodPressureEntry } from "../zepp/blood-pressure";
 import type { ChargeInsight, ChargeSample } from "../zepp/charge";
 import type { EmotionEntry } from "../zepp/emotion";
+import type { RecoveryDay } from "../zepp/recovery-days";
 import type { StreamAvailability } from "../zepp/event-manifest";
 import type { DailySummary, SleepNight } from "../zepp/types";
 import type { WeightEntry } from "../zepp/weight";
@@ -21,12 +22,12 @@ export type SyncTrigger = "startup" | "scheduled" | "manual";
 
 export interface SyncRunCounts {
   daily: number; sleep: number; workouts: number; strength_sets: number;
-  weight: number; blood_pressure: number; charge_samples: number; charge_insights: number; emotion_events: number; event_streams: number;
+  weight: number; blood_pressure: number; charge_samples: number; charge_insights: number; emotion_events: number; event_streams: number; recovery_days: number;
   warnings: number;
 }
 
 export const EMPTY_COUNTS: SyncRunCounts = {
-  daily: 0, sleep: 0, workouts: 0, strength_sets: 0, weight: 0, blood_pressure: 0, charge_samples: 0, charge_insights: 0, emotion_events: 0, event_streams: 0, warnings: 0
+  daily: 0, sleep: 0, workouts: 0, strength_sets: 0, weight: 0, blood_pressure: 0, charge_samples: 0, charge_insights: 0, emotion_events: 0, event_streams: 0, recovery_days: 0, warnings: 0
 };
 
 export interface SyncRunRow {
@@ -56,6 +57,7 @@ export interface StoreStats {
   charge_samples: TableCoverage;
   charge_insights: TableCoverage;
   emotion_events: TableCoverage;
+  recovery_days: TableCoverage;
   event_streams: { rows: number; with_data: number; checked_at: string | null };
   sync_runs: { rows: number };
   db_bytes: number | null;
@@ -77,7 +79,7 @@ function mapRun(r: Record<string, unknown>): SyncRunRow {
       daily: Number(r.daily_rows), sleep: Number(r.sleep_rows), workouts: Number(r.workout_rows),
       strength_sets: Number(r.strength_set_rows), weight: Number(r.weight_rows), blood_pressure: Number(r.blood_pressure_rows),
       charge_samples: Number(r.charge_sample_rows), charge_insights: Number(r.charge_insight_rows), emotion_events: Number(r.emotion_rows),
-      event_streams: Number(r.event_stream_rows), warnings: Number(r.warning_count)
+      event_streams: Number(r.event_stream_rows), recovery_days: Number(r.recovery_rows ?? 0), warnings: Number(r.warning_count)
     },
     error_kind: r.error_kind === null ? null : String(r.error_kind),
     error_message: r.error_message === null ? null : String(r.error_message)
@@ -387,12 +389,24 @@ ON CONFLICT(stream_id) DO UPDATE SET family = excluded.family, event_type = excl
   finishRun(id: number, result: { ok: boolean; status: string; counts: SyncRunCounts; error_kind?: string; error_message?: string }, finishedAt: string): void {
     this.db.prepare(`
 UPDATE sync_runs SET finished_at = ?, ok = ?, status = ?, daily_rows = ?, sleep_rows = ?, workout_rows = ?, strength_set_rows = ?,
-  weight_rows = ?, blood_pressure_rows = ?, charge_sample_rows = ?, charge_insight_rows = ?, emotion_rows = ?, event_stream_rows = ?,
+  weight_rows = ?, blood_pressure_rows = ?, charge_sample_rows = ?, charge_insight_rows = ?, emotion_rows = ?, event_stream_rows = ?, recovery_rows = ?,
   warning_count = ?, error_kind = ?, error_message = ? WHERE id = ?`).run(
       finishedAt, result.ok ? 1 : 0, result.status, result.counts.daily, result.counts.sleep, result.counts.workouts,
       result.counts.strength_sets, result.counts.weight, result.counts.blood_pressure, result.counts.charge_samples,
-      result.counts.charge_insights, result.counts.emotion_events, result.counts.event_streams,
+      result.counts.charge_insights, result.counts.emotion_events, result.counts.event_streams, result.counts.recovery_days,
       result.counts.warnings, result.error_kind ?? null, result.error_message ?? null, id);
+  }
+
+  /** Upserts per-date recovery figures; a column that is null in the new row keeps its stored value, so partial fetches never erase data. */
+  upsertRecoveryDays(rows: readonly RecoveryDay[], updatedAt: string): number {
+    const cols = ["hrv_ms", "hrv_samples", "readiness", "sleep_hrv", "sleep_rhr", "hrv_score", "rhr_score", "hrv_baseline", "rhr_baseline", "odi", "odi_events", "spo2_dips", "spo2_low"] as const;
+    const stmt = this.db.prepare(`
+INSERT INTO recovery_days (date, ${cols.join(", ")}, updated_at) VALUES (?, ${cols.map(() => "?").join(", ")}, ?)
+ON CONFLICT(date) DO UPDATE SET ${cols.map(c => `${c} = COALESCE(excluded.${c}, ${c})`).join(", ")}, updated_at = excluded.updated_at`);
+    return this.transaction(() => {
+      for (const r of rows) stmt.run(r.date, ...cols.map(c => n(r[c])), updatedAt);
+      return rows.length;
+    });
   }
 
   /** Runs left open by a crash or restart are closed as failed so they cannot look like a live run. */
@@ -445,6 +459,7 @@ UPDATE sync_runs SET finished_at = ?, ok = 0, status = 'interrupted', error_kind
       charge_samples: this.coverage("charge_samples", "date"),
       charge_insights: this.coverage("charge_insights", "date"),
       emotion_events: this.coverage("emotion_events", "date"),
+      recovery_days: this.coverage("recovery_days", "date"),
       event_streams: { rows: Number(streams.rows), with_data: Number(streams.with_data), checked_at: streams.checked_at },
       sync_runs: { rows: Number(runs.rows) },
       db_bytes: bytes

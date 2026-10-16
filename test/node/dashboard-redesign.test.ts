@@ -320,7 +320,7 @@ describe("exercises page and sidebar", () => {
     const h = await boot("#/workouts");
     try {
       const links = [...h.doc.querySelectorAll("nav.menu a")] as Element[];
-      expect(links.map(a => a.getAttribute("data-route"))).toEqual(["overview", "sleep", "activity", "charge", "workouts", "exercises", "weight", "sync"]);
+      expect(links.map(a => a.getAttribute("data-route"))).toEqual(["overview", "sleep", "recovery", "activity", "charge", "workouts", "training", "exercises", "weight", "sync"]);
       const paths = Object.fromEntries(links.map(a => [a.getAttribute("data-route"), a.querySelector("path")!.getAttribute("d")]));
       expect(paths.exercises).not.toBe(paths.workouts);
       expect(h.doc.querySelector(".tabs")).toBeNull();

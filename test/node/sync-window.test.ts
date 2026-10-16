@@ -72,14 +72,14 @@ describe("runSync window", () => {
 });
 
 describe("runSync progress", () => {
-  const steps = ["Daily & sleep", "Workouts", "Strength", "Hybrid Charge", "Emotion", "Blood pressure", "Routes (workout details)", "Weight", "Streams"];
+  const steps = ["Daily & sleep", "Workouts", "Strength", "Hybrid Charge", "Emotion", "Blood pressure", "Recovery", "Routes (workout details)", "Weight", "Streams"];
 
   it("reports the ordered steps, each step in order, and the window", async () => {
     const store = memStore(); const { ctx } = mockCtx();
     const seen: SyncProgress[] = [];
     await runSync(ctx, store, opts({ onProgress: p => seen.push(structuredClone(p)) }), "manual", { days: 5 });
-    expect(seen.length).toBe(9);
-    expect(seen.map(p => p.current)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(seen.length).toBe(10);
+    expect(seen.map(p => p.current)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(seen.every(p => p.steps.map(s => s.label).join("|") === steps.join("|"))).toBe(true);
     expect(seen[0]).toMatchObject({ window_start: addIsoDays(TODAY, -4), window_end: TODAY, mode: "override", since: null, overlap_days: 2 });
     expect(seen[0]!.chunk).toBeUndefined();
@@ -93,7 +93,7 @@ describe("runSync progress", () => {
     expect(first.window.mode).toBe("backfill");
     expect(seen[0]).toMatchObject({ mode: "backfill", window_start: addIsoDays(TODAY, -19) });
     // 20 days at 14 per request = two windows; the step cycle runs once per window, the tail steps once
-    expect(seen.filter(p => p.chunk).map(p => `${p.chunk!.index}/${p.chunk!.total}`)).toEqual(["1/2", "1/2", "1/2", "1/2", "1/2", "1/2", "2/2", "2/2", "2/2", "2/2", "2/2", "2/2"]);
+    expect(seen.filter(p => p.chunk).map(p => `${p.chunk!.index}/${p.chunk!.total}`)).toEqual(["1/2", "1/2", "1/2", "1/2", "1/2", "1/2", "1/2", "2/2", "2/2", "2/2", "2/2", "2/2", "2/2", "2/2"]);
     expect(seen.slice(-3).map(p => p.steps[p.current]!.label)).toEqual(["Routes (workout details)", "Weight", "Streams"]);
     expect(seen.slice(-3).every(p => !p.chunk)).toBe(true);
     seen.length = 0;
@@ -106,8 +106,8 @@ describe("runSync progress", () => {
     const seen: SyncProgress[] = [];
     const r = await runSync(ctx, store, opts({ skipSteps: new Set(["weight", "emotion", "streams"]), onProgress: p => seen.push(structuredClone(p)) }), "manual", { days: 5 });
     expect(r.ok).toBe(true);
-    expect(seen[0]!.steps.map(s => s.id)).toEqual(["daily_sleep", "workouts", "strength", "charge", "blood_pressure", "routes"]);
-    expect(seen.map(p => p.current)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(seen[0]!.steps.map(s => s.id)).toEqual(["daily_sleep", "workouts", "strength", "charge", "blood_pressure", "recovery", "routes"]);
+    expect(seen.map(p => p.current)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(r.counts.weight).toBe(0);
     expect(r.counts.emotion_events).toBe(0);
     expect(r.counts.event_streams).toBe(0);
@@ -129,7 +129,7 @@ describe("runSync progress", () => {
     const mid = service.status();
     expect(mid.running).toBe(true);
     expect(mid.progress).toMatchObject({ current: 0, mode: "backfill", window_start: addIsoDays(TODAY, -4), window_end: TODAY });
-    expect(mid.progress!.steps).toHaveLength(9);
+    expect(mid.progress!.steps).toHaveLength(10);
     expect(mid.settings.overlap_days).toBe(2);
     await run;
     expect(service.status().progress).toBeNull();

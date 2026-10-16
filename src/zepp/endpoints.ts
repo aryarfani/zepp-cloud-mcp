@@ -15,7 +15,9 @@ export type ZeppEndpointName =
   | "userEvents"
   | "userEventsDateString"
   | "weightRecords"
-  | "bloodPressure";
+  | "bloodPressure"
+  | "watchUpdateTime"
+  | "trainingCalendar";
 
 /** Largest `days` window the blood pressure endpoint accepted in live checks (14 ok, 30 rejected). */
 export const BLOOD_PRESSURE_MAX_DAYS = 14;
@@ -109,6 +111,12 @@ export function buildZeppRequest(
         query: { days: String(days), sourceArrayStr: "com.huami.midong.associated,com.huami.midong", toDate }
       };
     }
+    case "watchUpdateTime":
+      // Verified live: answers on the regional host with { effectiveTime, lastSyncTime } (epoch seconds).
+      return { path: `/users/${validatedUserId(args.userId)}/latestEffectiveUpdateTime`, query: {} };
+    case "trainingCalendar":
+      // Read-only list of scheduled workouts (startTime/endTime in ms); the response is { code, data: { items, next } }.
+      return { path: `/users/${validatedUserId(args.userId)}/training/calendar`, query: pick(args, ["startTime", "endTime", "limit"]) };
     case "userEventsDateString":
       return {
         path: `/users/${validatedUserId(args.userId)}/events/dateString`,

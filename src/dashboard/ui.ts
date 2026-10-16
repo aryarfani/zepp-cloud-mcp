@@ -165,7 +165,25 @@ svg.route{position:absolute;inset:0;width:100%;height:100%;display:block;pointer
 .mapnote{position:absolute;left:10px;top:46px;z-index:2;font-size:.72rem;color:var(--muted);background:rgba(10,12,17,.78);padding:2px 8px;border-radius:8px}
 .mappill{position:absolute;left:10px;top:10px;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:5px 12px 5px 9px;border-radius:999px;font-size:.8rem;font-weight:600;color:var(--text);background:rgba(18,22,30,.9);border:1px solid var(--line2);backdrop-filter:blur(4px);pointer-events:none}
 .mappill svg{width:15px;height:15px;color:var(--teal)}
-.maptoggle{position:absolute;top:10px;right:50px;z-index:2;padding:4px 12px;font-size:.78rem;border-radius:999px;background:rgba(18,22,30,.9);backdrop-filter:blur(4px)}
+.mapbar{position:absolute;top:10px;right:50px;z-index:3;display:flex;align-items:center;gap:6px}
+.maptoggle,.expbtn{padding:4px 12px;font-size:.78rem;border-radius:999px;background:rgba(18,22,30,.9);backdrop-filter:blur(4px)}
+.expwrap{position:relative}
+.expbtn{display:inline-flex;align-items:center;gap:6px}
+.expbtn svg{width:14px;height:14px;color:var(--teal)}
+.expbtn .dd-chev{width:12px;height:12px;color:var(--faint);transform:rotate(-90deg);transition:transform .15s}
+.expbtn[aria-expanded=true] .dd-chev{transform:rotate(90deg)}
+.expmenu{position:absolute;right:0;top:calc(100% + 6px);min-width:170px;background:#12161d;border:1px solid var(--line2);border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.55);padding:6px}
+.expmenu.hidden{display:none}
+.expitem{display:block;padding:8px 10px;border-radius:8px;font-size:.84rem;color:var(--text);text-decoration:none;cursor:pointer}
+.expitem:hover,.expitem:focus{background:rgba(45,212,191,.13);outline:none}
+.expnote{padding:2px 10px 6px;font-size:.7rem;color:var(--muted);line-height:1.35}
+.watchpill{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;font-size:.8rem;color:var(--muted);background:var(--panel2);border:1px solid var(--line);margin:0 0 12px}
+.watchpill svg{width:14px;height:14px;color:var(--teal)}
+.planstrip{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
+.plan{flex:none;min-width:130px;max-width:200px;padding:9px 12px;border-radius:12px;background:var(--panel2);border:1px solid var(--line)}
+.plan .d{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.plan .t{margin-top:3px;font-weight:600;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hint{font-size:.78rem;color:var(--muted);margin:8px 2px 0;line-height:1.45}
 .maplegend{position:absolute;left:10px;bottom:10px;z-index:2;padding:6px 10px 7px;border-radius:10px;background:rgba(10,12,17,.82);border:1px solid var(--line);font-size:.68rem;color:var(--muted);min-width:132px;pointer-events:none}
 .maplegend .bar{height:6px;border-radius:3px;margin:4px 0 3px;background:linear-gradient(90deg,#f97316,#eab308,#22c55e)}
 .maplegend .ends{display:flex;justify-content:space-between}
@@ -278,9 +296,9 @@ export const DASHBOARD_JS = String.raw`(function () {
   var state = { days: 30, wk: { type: "", q: "", items: [], total: 0, types: [], loaded: false, scrollTop: 0 }, chargeDate: "", wkUi: null };
   var navToken = 0;
   var gradSeq = 0;
-  var RANGE_VIEWS = { sleep: 1, activity: 1, charge: 1, weight: 1 };
-  var TITLES = { overview: "Overview", sleep: "Sleep", activity: "Activity", charge: "Hybrid Charge", workouts: "Workouts", exercises: "Exercises", weight: "Weight", sync: "Sync" };
-  var SUBTITLES = { overview: "Today at a glance", sleep: "Nightly duration, stages and score", activity: "Steps, calories and resting heart rate", charge: "Hybrid Charge energy level", workouts: "Browse and analyze your workouts", exercises: "Strength exercise ids, names and usage", weight: "Weigh-ins and trend", sync: "Local database and sync health" };
+  var RANGE_VIEWS = { sleep: 1, recovery: 1, activity: 1, charge: 1, weight: 1 };
+  var TITLES = { overview: "Overview", sleep: "Sleep", recovery: "Recovery", training: "Training", activity: "Activity", charge: "Hybrid Charge", workouts: "Workouts", exercises: "Exercises", weight: "Weight", sync: "Sync" };
+  var SUBTITLES = { overview: "Today at a glance", sleep: "Nightly duration, stages and score", recovery: "HRV, resting heart rate, readiness and SpO2", training: "Weekly volume and what is planned", activity: "Steps, calories and resting heart rate", charge: "Hybrid Charge energy level", workouts: "Browse and analyze your workouts", exercises: "Strength exercise ids, names and usage", weight: "Weigh-ins and trend", sync: "Local database and sync health" };
 
   // ---- DOM helpers (text is always set through textContent) --------------------------------------------------------------------------
   function append(el, kids) {
@@ -329,6 +347,9 @@ export const DASHBOARD_JS = String.raw`(function () {
     chevron: "M15 18l-6-6 6-6",
     check: "M5 12.5l4.5 4.5L19 7.5",
     refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
+    download: "M12 3v12M7 11l5 5 5-5M4 20h16",
+    calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
+    watch: "M9 3h6l1 4H8zM9 21h6l1-4H8zM7 7h10v10H7zM12 10v2.5l1.8 1",
     grid: "M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z"
   };
   function ico(name, cls) {
@@ -697,6 +718,74 @@ export const DASHBOARD_JS = String.raw`(function () {
     });
   }
 
+
+  // ---- recovery -----------------------------------------------------------------------------------------------------
+  function viewRecovery(box, token) {
+    return api("recovery?days=" + state.days).then(function (r) {
+      if (token !== navToken) return;
+      clear(box);
+      if (!r.available) { box.appendChild(panel("", empty("No data yet"))); return; }
+      var sm = r.summary || {}, series = r.series || [], days = dateList(r.start, r.end), by = byKey(series, "date");
+      var cards = [];
+      cards.push(isNum(sm.avg_hrv_ms) ? card("Avg HRV", fmtInt(sm.avg_hrv_ms), "ms", sm.hrv_days + (sm.hrv_days === 1 ? " night" : " nights"), null, null, ico("pulse")) : emptyCard("Avg HRV", "No HRV data in this range"));
+      cards.push(isNum(sm.avg_resting_hr_bpm) ? card("Resting HR", fmtInt(sm.avg_resting_hr_bpm), "bpm", "average over " + sm.resting_hr_days + (sm.resting_hr_days === 1 ? " day" : " days"), null, null, ico("heart")) : emptyCard("Resting HR", "No resting heart rate in this range"));
+      var lr = sm.latest_readiness;
+      cards.push(lr && isNum(lr.value) ? card("Readiness", fmtInt(lr.value), "/ 100", "latest " + shortDate(lr.date) + (isNum(sm.avg_readiness) ? " | avg " + fmtInt(sm.avg_readiness) : ""), null, null, ico("bolt")) : emptyCard("Readiness", "No readiness score in this range"));
+      cards.push(isNum(sm.spo2_dips_total) ? card("SpO2 dips", fmtInt(sm.spo2_dips_total), sm.spo2_dips_total === 1 ? "dip" : "dips", sm.spo2_nights + " nights with data" + (isNum(sm.spo2_low) ? " | lowest " + fmtInt(sm.spo2_low) + "%" : "") + (isNum(sm.avg_odi) ? " | ODI " + fmt1(sm.avg_odi) + "/h" : ""), null, null, ico("moon")) : emptyCard("SpO2 dips", "No SpO2 dip data in this range"));
+      box.appendChild(h("div", { "class": "cards" }, cards));
+      if (!series.length) { box.appendChild(panel("", empty("No recovery data stored for this range yet. It is filled by the sync."))); return; }
+      var hrvPts = days.map(function (d) { var x = by[d]; var v = x && isNum(x.hrv_ms) ? x.hrv_ms : null; return { label: shortDate(d), v: v, tip: shortDate(d) + ": HRV " + fmtInt(v) + " ms" }; });
+      var rhrPts = days.map(function (d) { var x = by[d]; var v = x && isNum(x.resting_hr_bpm) ? x.resting_hr_bpm : null; return { label: shortDate(d), v: v, tip: shortDate(d) + ": resting HR " + fmtInt(v) + " bpm" }; });
+      var rdyPts = days.map(function (d) { var x = by[d]; var v = x && isNum(x.readiness) ? x.readiness : null; return { label: shortDate(d), v: v, tip: shortDate(d) + ": readiness " + fmtInt(v) }; });
+      box.appendChild(h("div", { "class": "grid2" }, [
+        panel("HRV (ms)", [chart({ kind: "line", points: hrvPts, fmt: fmtInt, mean: avg(hrvPts.map(function (p) { return p.v; })), color: "var(--teal)", emptyText: "No HRV data in this range" }), legend([{ name: "overnight HRV (SDNN)", color: "var(--teal)" }])]),
+        panel("Resting heart rate (bpm)", [chart({ kind: "line", points: rhrPts, fmt: fmtInt, mean: avg(rhrPts.map(function (p) { return p.v; })), color: "var(--bad)", emptyText: "No resting heart rate in this range" }), legend([{ name: "resting HR", color: "var(--bad)" }])])
+      ]));
+      box.appendChild(panel("Readiness", [chart({ kind: "bar", points: rdyPts, fmt: fmtInt, steps: [10, 20, 25, 50], mean: avg(rdyPts.map(function (p) { return p.v; })), color: "var(--teal)", emptyText: "No readiness scores in this range" }), rangeNote(r)]));
+      box.appendChild(h("p", { "class": "hint", text: "HRV is the average of the overnight SDNN readings the watch reports, filed under the day you wake up. Resting heart rate is the daily value, or the sleeping resting rate from the readiness record when the daily one is missing. Readiness is Zepp's own score; nothing here is calculated by this dashboard except the averages." }));
+    });
+  }
+
+  // ---- training -----------------------------------------------------------------------------------------------------
+  function agoText(min) {
+    if (!isNum(min)) return "";
+    if (min < 1) return "just now";
+    if (min < 60) return min + " min ago";
+    if (min < 48 * 60) return Math.floor(min / 60) + " h ago";
+    return Math.floor(min / 1440) + " days ago";
+  }
+  function periodCard(label, p, sub) {
+    var line = p.count + (p.count === 1 ? " workout" : " workouts") + " | " + fmtDur(p.duration_s) + (p.calories_kcal > 0 ? " | " + fmtInt(p.calories_kcal) + " kcal" : "");
+    return card(label, p.distance_m > 0 ? (p.distance_m / 1000).toFixed(1) : "0", "km", [h("div", { text: line }), sub ? h("div", { text: sub }) : null], null, null, ico("route"));
+  }
+  function viewTraining(box, token) {
+    return api("training").then(function (t) {
+      if (token !== navToken) return;
+      clear(box);
+      if (!t.available) { box.appendChild(panel("", empty("No data yet"))); return; }
+      if (t.watch && t.watch.available && t.watch.last_sync_at) {
+        box.appendChild(h("div", { "class": "watchpill", title: "Last time the phone uploaded the watch's data to Zepp" }, [ico("watch"), h("span", { text: "Watch last synced " + agoText(t.watch.minutes_ago) })]));
+      }
+      box.appendChild(h("div", { "class": "cards" }, [
+        periodCard("This week", t.this_week, "so far"),
+        periodCard("Last week", t.last_week, ""),
+        periodCard("This month", t.this_month, "so far"),
+        periodCard("Last month", t.last_month, "")
+      ]));
+      var weeks = t.weeks || [];
+      var pts = weeks.map(function (w) { var km = w.distance_m / 1000; return { label: shortDate(w.week_start), v: km, tip: "Week of " + shortDate(w.week_start) + ": " + km.toFixed(1) + " km, " + w.count + (w.count === 1 ? " workout" : " workouts") + ", " + fmtDur(w.duration_s) }; });
+      box.appendChild(panel("Weekly distance, last " + weeks.length + " weeks (km)", [chart({ kind: "bar", points: pts, fmt: function (v) { return fmt1(v); }, mean: avg(pts.map(function (p) { return p.v; })), emptyText: "No workouts in these weeks" }), h("div", { "class": "sub", text: "Weeks start on Monday. Distance of every stored workout that recorded one." })]));
+      if ((t.sports || []).length) {
+        box.appendChild(panel("This month by sport", table(["Sport", "Workouts", "Time", "Distance"], t.sports.map(function (x) { return [typeName(x.activity_type), fmtInt(x.count), fmtDur(x.duration_s), x.distance_m > 0 ? fmtKm(x.distance_m) : "-"]; }), [1, 2, 3])));
+      }
+      if ((t.planned || []).length) {
+        box.appendChild(panel("Planned workouts", [h("div", { "class": "planstrip" }, t.planned.slice(0, 14).map(function (p) {
+          return h("div", { "class": "plan" }, [h("div", { "class": "d", text: fmtZone(p.start_at, { weekday: "short", day: "numeric", month: "short" }) }), h("div", { "class": "t", title: p.title, text: p.title })]);
+        })), h("div", { "class": "sub", text: "Read from the training calendar in the Zepp app. Read only." })]));
+      }
+    });
+  }
+
   function viewActivity(box, token) {
     return api("trends?days=" + state.days).then(function (t) {
       if (token !== navToken) return;
@@ -1056,7 +1145,7 @@ export const DASHBOARD_JS = String.raw`(function () {
         h("div", { "class": "bm-lists" }, [list("p", "Primary muscles", mus.p), list("s", "Secondary muscles", mus.s)])
       ]),
       h("div", { "class": "bm-legend" }, [key("p", "Primary muscle used"), key("s", "Secondary muscle used"), key("n", "Non-target muscle")]),
-      h("p", { "class": "bm-note", text: "Estimate from the exercise ids (Zepp/Gadgetbridge exercise catalogue). The watch does not measure which muscles you used." })
+      h("p", { "class": "bm-note", text: "Estimate from the exercise ids (Zepp exercise catalogue, checked against the live Zepp muscle config). The watch does not measure which muscles you used." })
     ]);
   }
   // ---- running / walking / cycling detail (pace, heart rate, elevation, splits, route) ------------------------------------------------
@@ -1203,6 +1292,32 @@ export const DASHBOARD_JS = String.raw`(function () {
     }
     return out;
   }
+
+  function exportMenu(id) {
+    var wrap = h("div", { "class": "expwrap" });
+    var btn = h("button", { type: "button", "class": "expbtn", "aria-haspopup": "menu", "aria-expanded": "false", "aria-controls": "expmenu" }, [ico("download"), h("span", { text: "Export" }), ico("chevron", "dd-chev")]);
+    var base = "/dashboard/api/workouts/" + encodeURIComponent(id) + "/export.";
+    var links = [["gpx", "Download GPX"], ["tcx", "Download TCX"]].map(function (x) { return h("a", { role: "menuitem", tabindex: "-1", "class": "expitem", href: base + x[0], download: "", text: x[1] }); });
+    var menu = h("div", { id: "expmenu", role: "menu", "class": "expmenu hidden", "aria-label": "Export workout" }, links.concat([h("div", { "class": "expnote", text: "Built from the stored, simplified route." })]));
+    var open = false, act = 0;
+    function focusItem(i) { act = (i + links.length) % links.length; links[act].focus(); }
+    function onDoc(ev) { if (!wrap.isConnected) { document.removeEventListener("click", onDoc); return; } if (!wrap.contains(ev.target)) close(false); }
+    function openMenu() { open = true; menu.classList.remove("hidden"); btn.setAttribute("aria-expanded", "true"); document.addEventListener("click", onDoc); focusItem(0); }
+    function close(focusBtn) { open = false; menu.classList.add("hidden"); btn.setAttribute("aria-expanded", "false"); document.removeEventListener("click", onDoc); if (focusBtn) btn.focus(); }
+    btn.addEventListener("click", function () { if (open) close(false); else openMenu(); });
+    btn.addEventListener("keydown", function (ev) { if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); if (!open) openMenu(); } else if (ev.key === "Escape" && open) { ev.preventDefault(); close(true); } });
+    menu.addEventListener("keydown", function (ev) {
+      if (ev.key === "ArrowDown") { ev.preventDefault(); focusItem(act + 1); }
+      else if (ev.key === "ArrowUp") { ev.preventDefault(); focusItem(act - 1); }
+      else if (ev.key === "Home") { ev.preventDefault(); focusItem(0); }
+      else if (ev.key === "End") { ev.preventDefault(); focusItem(links.length - 1); }
+      else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); close(true); }
+      else if (ev.key === "Tab") close(false);
+    });
+    links.forEach(function (a) { a.addEventListener("click", function () { close(false); }); });
+    wrap.appendChild(btn); wrap.appendChild(menu);
+    return wrap;
+  }
   function routePanel(route, opts) {
     if (!route || !route.points || route.points.length < 2) return null;
     opts = opts || {};
@@ -1304,7 +1419,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     // drag to pan
     var drag = null;
     box.addEventListener("pointerdown", function (ev) {
-      if (ev.target && ev.target.closest && ev.target.closest(".mapctl,.mapattr,.maptoggle")) return;
+      if (ev.target && ev.target.closest && ev.target.closest(".mapctl,.mapattr,.mapbar")) return;
       drag = { x: ev.clientX, y: ev.clientY }; box.classList.add("drag");
       try { box.setPointerCapture(ev.pointerId); } catch (e) { /* not supported */ }
     });
@@ -1343,7 +1458,7 @@ export const DASHBOARD_JS = String.raw`(function () {
       ro.observe(box);
     } else setTimeout(firstSize, 0);
     if (opts.label) box.appendChild(h("div", { "class": "mappill" }, [ico(opts.icon || "route"), h("span", { text: opts.label })]));
-    box.appendChild(toggle);
+    box.appendChild(h("div", { "class": "mapbar" }, [opts.exportId ? exportMenu(opts.exportId) : null, toggle]));
     if (classes) box.appendChild(h("div", { "class": "maplegend", role: "img", "aria-label": "Route colour: slow is orange, fast is green" }, [h("div", { text: "Slow to Fast" }), h("div", { "class": "bar" }), h("div", { "class": "ends" }, [h("span", { text: "Slow" }), h("span", { text: "Fast" })])]));
     var card = panel(null, [
       box,
@@ -1384,7 +1499,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     // With a GPS route the map card comes first, full width, then the stats card; the header and the four tiles above it are replaced by them.
     var hasRoute = !!(a.route && a.route.points && a.route.points.length >= 2);
     if (hasRoute) {
-      var mapCard = routePanel(a.route, { label: typeName(w.activity_type), icon: sportIconName(w.activity_type), classes: routeSegmentClasses(a.route, se, speed) });
+      var mapCard = routePanel(a.route, { label: typeName(w.activity_type), icon: sportIconName(w.activity_type), exportId: w.workout_id, classes: routeSegmentClasses(a.route, se, speed) });
       out.push(mapCard, routeStats(w, sm, speed));
       (top || []).forEach(function (el) { el.classList.add("hidden"); });
     }
@@ -1692,7 +1807,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     state.wkUi = null;
     $("content").classList.toggle("fit", r.view === "workouts");
     clear(box); box.appendChild(skeleton());
-    var views = { overview: viewOverview, sleep: viewSleep, activity: viewActivity, charge: viewCharge, workouts: viewWorkouts, exercises: viewExercises, weight: viewWeight, sync: viewSync };
+    var views = { overview: viewOverview, sleep: viewSleep, recovery: viewRecovery, training: viewTraining, activity: viewActivity, charge: viewCharge, workouts: viewWorkouts, exercises: viewExercises, weight: viewWeight, sync: viewSync };
     var p;
     try { p = views[r.view](box, token, r.rest); } catch (e) { p = Promise.reject(e); }
     return Promise.resolve(p).catch(function (e) {
@@ -1738,6 +1853,8 @@ const ICONS = {
   workouts: "M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11",
   exercises: "M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1zM8 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2M8.5 11.5l1.2 1.2 2.1-2.4M8.5 16.5l1.2 1.2 2.1-2.4M14.5 12h2.5M14.5 17h2.5",
   weight: "M12 3a4 4 0 0 0-4 4h8a4 4 0 0 0-4-4zM5 7h14l1 13H4z",
+  recovery: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8zM6 12h3l1.5-3 3 6L15 12h3",
+  training: "M4 20V10M10 20V4M16 20v-8M22 20H2M18 8l3-3M21 5v3h-3",
   sync: "M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M21 4v5h-5M3 20v-5h5",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   menu: "M3 6h18M3 12h18M3 18h18"
@@ -1747,9 +1864,11 @@ const ICONS = {
 export const NAV_ITEMS: ReadonlyArray<{ route: keyof typeof ICONS; label: string }> = [
   { route: "overview", label: "Overview" },
   { route: "sleep", label: "Sleep" },
+  { route: "recovery", label: "Recovery" },
   { route: "activity", label: "Activity" },
   { route: "charge", label: "Hybrid Charge" },
   { route: "workouts", label: "Workouts" },
+  { route: "training", label: "Training" },
   { route: "exercises", label: "Exercises" },
   { route: "weight", label: "Weight" },
   { route: "sync", label: "Sync" }

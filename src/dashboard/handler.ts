@@ -3,7 +3,9 @@
 import { RateLimiter, clientIp, isSameOriginPost, parseCookies, randomToken, safeEqual } from "../oauth";
 import type { DashboardData } from "./data";
 import { SESSION_COOKIE, SESSION_TTL_S, createSessionManager, deriveSessionKeyMaterial, type SessionManager } from "./session";
+import { buildTrack, fileBase, toGpx, toTcx, type ExportWorkout } from "./export";
 import { renderDashboardHtml, renderLoginHtml } from "./ui";
+import type { WorkoutAnalysis } from "../zepp/workout-analysis";
 
 const CSRF_COOKIE = "zepp_dash_csrf";
 /** The only external host the dashboard may load images from: OpenStreetMap raster tiles for the workout route map. */
@@ -16,6 +18,15 @@ const MAX_LOGIN_BODY = 4096;
 const DEFAULT_FAIL_DELAY_MS = 600;
 const SYNC_RUN_WINDOW_MS = 60 * 60 * 1000;
 const SYNC_RUN_MAX_PER_WINDOW = 5;
+
+/** Cheap read-only Zepp lookups for the Training page. Each may throw; the handler caches results and never shows upstream errors. */
+export interface DashboardLive {
+  watchLastSync?: () => Promise<{ last_sync_at: string; effective_at: string | null } | null>;
+  plannedWorkouts?: () => Promise<Array<{ title: string; start_at: string; end_at: string | null; status: number | null }>>;
+}
+const LIVE_TTL_MS = 120_000;
+const LIVE_PLAN_TTL_MS = 600_000;
+const LIVE_FAIL_TTL_MS = 60_000;
 
 export interface DashboardOptions {
   ownerPassword: string;
@@ -35,6 +46,8 @@ export interface DashboardOptions {
    * The dashboard only triggers it; the sync itself uses the existing read-only Zepp calls.
    */
   startSync?: () => "started" | "running" | "unavailable";
+  /** Optional: read-only Zepp probes (watch last-sync time, planned workouts) shown on the Training page. Cached; never triggers a sync. */
+  live?: DashboardLive;
   now?: () => number;
   /** Pause after a wrong password (default 600 ms). */
   failDelayMs?: number;
@@ -108,6 +121,34 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
   let sessionsPromise: Promise<SessionManager> | undefined;
   const sessions = () => (sessionsPromise ??= deriveSessionKeyMaterial(opts.ownerPassword, opts.sessionSecret).then(k => createSessionManager(k, now)));
   const { data } = opts;
+
+  /** Result cache + in-flight dedupe: however often the page is opened, Zepp is asked at most once per TTL (a failure is remembered for a minute). */
+  function cached<T>(fn: (() => Promise<T>) | undefined, ttl: number): () => Promise<{ ok: true; value: T } | { ok: false }> {
+    let at = 0, last: { ok: true; value: T } | { ok: false } = { ok: false }, flight: Promise<void> | undefined;
+    return async () => {
+      if (!fn) return { ok: false };
+      if (now() - at < (last.ok ? ttl : LIVE_FAIL_TTL_MS) && at > 0) return last;
+      flight ??= fn().then(value => { last = { ok: true, value }; }, () => { last = { ok: false }; }).finally(() => { at = now(); flight = undefined; });
+      await flight;
+      return last;
+    };
+  }
+  const watchProbe = cached(opts.live?.watchLastSync, LIVE_TTL_MS);
+  const planProbe = cached(opts.live?.plannedWorkouts, LIVE_PLAN_TTL_MS);
+
+  /** GET /dashboard/api/workouts/<id>/export.gpx|tcx: a file download built from the stored route (session required like every API route). */
+  function exportFile(id: string, kind: "gpx" | "tcx"): Response {
+    const found = data.workout(id) as { timezone: string; workout: ExportWorkout } | null;
+    if (!found) return json({ error: "Not found" }, 404);
+    const stored = data.analysis(id);
+    const analysis = stored?.status === "ok" ? (stored.analysis as WorkoutAnalysis | null) : null;
+    const track = analysis ? buildTrack(found.workout, analysis.route, analysis.series) : null;
+    if (!track) return json({ error: "No route stored for this workout" }, 404);
+    const body = kind === "gpx" ? toGpx(found.workout, track) : toTcx(found.workout, track);
+    const h = securityHeaders(kind === "gpx" ? "application/gpx+xml; charset=utf-8" : "application/vnd.garmin.tcx+xml; charset=utf-8");
+    h.set("content-disposition", `attachment; filename="${fileBase(found.workout, found.timezone)}.${kind}"`);
+    return new Response(body, { status: 200, headers: h });
+  }
 
   async function currentSession(request: Request) {
     const token = parseCookies(request.headers.get("cookie"))[SESSION_COOKIE];
@@ -186,6 +227,23 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
           if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: "date must use YYYY-MM-DD" }, 400);
           return json(data.charge(days, date ?? undefined));
         }
+        case "recovery": {
+          const days = intParam(q.get("days"), 30, 1, DASHBOARD_MAX_DAYS);
+          if (days === null) return json({ error: `days must be an integer from 1 to ${DASHBOARD_MAX_DAYS}` }, 400);
+          return json(data.recovery(days));
+        }
+        case "training": {
+          const base = data.training() as Record<string, unknown>;
+          if (base.available !== true) return json(base);
+          const [watch, plans] = await Promise.all([watchProbe(), planProbe()]);
+          const nowMs = now();
+          const lastSync = watch.ok && watch.value ? watch.value.last_sync_at : null;
+          return json({
+            ...base,
+            watch: { available: watch.ok, last_sync_at: lastSync, minutes_ago: lastSync ? Math.max(0, Math.floor((nowMs - Date.parse(lastSync)) / 60_000)) : null },
+            planned: plans.ok ? plans.value : []
+          });
+        }
         case "workouts": {
           const limit = intParam(q.get("limit"), 25, 1, 100);
           const offset = intParam(q.get("offset"), 0, 0, 100000);
@@ -197,6 +255,13 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
           return json(data.workouts({ limit, offset, ...(days !== undefined ? { days } : {}), ...(type ? { type } : {}), ...(search ? { q: search } : {}) }));
         }
         default: {
+          const exp = /^workouts\/(.+)\/export\.(gpx|tcx)$/.exec(path);
+          if (exp) {
+            let id = "";
+            try { id = decodeURIComponent(exp[1]!); } catch { /* falls through to 404 */ }
+            if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(id)) return json({ error: "Not found" }, 404);
+            return exportFile(id, exp[2] as "gpx" | "tcx");
+          }
           if (path.startsWith("workouts/") && path.endsWith("/analysis")) {
             let id = "";
             try { id = decodeURIComponent(path.slice("workouts/".length, -"/analysis".length)); } catch { /* falls through to 404 */ }

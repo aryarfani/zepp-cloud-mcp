@@ -177,5 +177,30 @@ CREATE TABLE workout_details (
   fetched_at TEXT NOT NULL
 );
 `
+  },
+  {
+    version: 4,
+    name: "recovery days",
+    sql: `
+-- One row per wake-up date with the recovery figures Zepp reports (HRV, readiness, SpO2 dips / ODI). Additive only.
+CREATE TABLE recovery_days (
+  date TEXT PRIMARY KEY,
+  hrv_ms REAL,
+  hrv_samples INTEGER,
+  readiness INTEGER,
+  sleep_hrv REAL,
+  sleep_rhr REAL,
+  hrv_score INTEGER,
+  rhr_score INTEGER,
+  hrv_baseline REAL,
+  rhr_baseline REAL,
+  odi REAL,
+  odi_events INTEGER,
+  spo2_dips INTEGER,
+  spo2_low INTEGER,
+  updated_at TEXT NOT NULL
+);
+ALTER TABLE sync_runs ADD COLUMN recovery_rows INTEGER NOT NULL DEFAULT 0;
+`
   }
 ];

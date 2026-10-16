@@ -1,6 +1,6 @@
 import type { SyncWindowMode } from "./window";
 
-export type SyncStepId = "daily_sleep" | "workouts" | "strength" | "charge" | "emotion" | "blood_pressure" | "routes" | "weight" | "streams";
+export type SyncStepId = "daily_sleep" | "workouts" | "strength" | "charge" | "emotion" | "blood_pressure" | "recovery" | "routes" | "weight" | "streams";
 
 /** The steps of a sync run in execution order. `enabled` says whether the configured sync runs the step at all. */
 export const SYNC_STEPS: ReadonlyArray<{ id: SyncStepId; label: string; enabled: (options: { skipSteps?: ReadonlySet<string> }) => boolean }> = [
@@ -10,6 +10,7 @@ export const SYNC_STEPS: ReadonlyArray<{ id: SyncStepId; label: string; enabled:
   { id: "charge", label: "Hybrid Charge", enabled: o => !o.skipSteps?.has("charge") },
   { id: "emotion", label: "Emotion", enabled: o => !o.skipSteps?.has("emotion") },
   { id: "blood_pressure", label: "Blood pressure", enabled: o => !o.skipSteps?.has("blood_pressure") },
+  { id: "recovery", label: "Recovery", enabled: o => !o.skipSteps?.has("recovery") },
   { id: "routes", label: "Routes (workout details)", enabled: o => !o.skipSteps?.has("routes") },
   { id: "weight", label: "Weight", enabled: o => !o.skipSteps?.has("weight") },
   { id: "streams", label: "Streams", enabled: o => !o.skipSteps?.has("streams") }

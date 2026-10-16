@@ -119,8 +119,8 @@ describe("Sync tab: Sync now", () => {
     expect(doc.querySelector(".syncbtn").disabled).toBe(false);
   }, 15000);
 
-  const STEPS = ["Daily & sleep", "Workouts", "Strength", "Hybrid Charge", "Emotion", "Blood pressure", "Routes (workout details)", "Weight", "Streams"]
-    .map((label, i) => ({ id: ["daily_sleep", "workouts", "strength", "charge", "emotion", "blood_pressure", "routes", "weight", "streams"][i], label }));
+  const STEPS = ["Daily & sleep", "Workouts", "Strength", "Hybrid Charge", "Emotion", "Blood pressure", "Recovery", "Routes (workout details)", "Weight", "Streams"]
+    .map((label, i) => ({ id: ["daily_sleep", "workouts", "strength", "charge", "emotion", "blood_pressure", "recovery", "routes", "weight", "streams"][i], label }));
   const progress = (current: number, over: any = {}) => ({ steps: STEPS, current, window_start: "2026-10-13", window_end: "2026-10-15", mode: "overlap", since: "2026-10-15", overlap_days: 2, ...over });
 
   it("starts in the running state when a sync is already in progress, with the step stepper from the reported progress", async () => {
@@ -130,13 +130,13 @@ describe("Sync tab: Sync now", () => {
     expect(text(btn)).toBe("Syncing…");
     expect(doc.querySelector(".pbar").classList.contains("hidden")).toBe(true); // the indeterminate bar is only the fallback
     const items = [...doc.querySelectorAll(".stepper li")] as Element[];
-    expect(items.length).toBe(9);
+    expect(items.length).toBe(10);
     expect(items.map(li => text(li.querySelector(".slbl")))).toEqual(STEPS.map(x => x.label));
-    expect(items.map(li => li.className)).toEqual(["step done", "step done", "step done", "step cur", "step pend", "step pend", "step pend", "step pend", "step pend"]);
+    expect(items.map(li => li.className)).toEqual(["step done", "step done", "step done", "step cur", "step pend", "step pend", "step pend", "step pend", "step pend", "step pend"]);
     expect(items[0].querySelector("svg")).toBeTruthy(); // check mark on done steps
     expect(text(items[4].querySelector(".sdot"))).toBe("5");
     expect(items[3].getAttribute("aria-current")).toBe("step");
-    expect(text(doc.querySelector(".stepline"))).toBe("Step 4 of 9: Hybrid Charge");
+    expect(text(doc.querySelector(".stepline"))).toBe("Step 4 of 10: Hybrid Charge");
     expect(text(doc.querySelector(".stepsub"))).toBe("Fetching since 13 Oct (last sync + 2 days overlap)");
     expect(text(doc.querySelector(".steplast"))).toMatch(/^Last sync: \d{2} \w{3}, \d{2}:\d{2}$/);
   });
@@ -144,7 +144,7 @@ describe("Sync tab: Sync now", () => {
   it("says first sync backfill, and shows the window number for chunked windows", async () => {
     const { doc } = await boot(fakeSync({ running: true, progress: progress(1, { mode: "backfill", since: null, window_start: "2026-07-18", chunk: { index: 2, total: 7 } }) }));
     expect(text(doc.querySelector(".stepsub"))).toBe("Fetching since 18 Jul (first sync backfill)");
-    expect(text(doc.querySelector(".stepline"))).toBe("Step 2 of 9: Workouts (window 2 of 7)");
+    expect(text(doc.querySelector(".stepline"))).toBe("Step 2 of 10: Workouts (window 2 of 7)");
   });
 
   it("falls back to the indeterminate bar when the sync reports no (or unusable) progress", async () => {
@@ -159,10 +159,10 @@ describe("Sync tab: Sync now", () => {
     const sync = fakeSync({ running: true, progress: progress(0) });
     const { doc } = await boot(sync);
     const first = doc.querySelector(".stepper li");
-    expect(text(doc.querySelector(".stepline"))).toBe("Step 1 of 9: Daily & sleep");
+    expect(text(doc.querySelector(".stepline"))).toBe("Step 1 of 10: Daily & sleep");
     sync.f.progress = progress(5);
     await wait(2500);
-    expect(text(doc.querySelector(".stepline"))).toBe("Step 6 of 9: Blood pressure");
+    expect(text(doc.querySelector(".stepline"))).toBe("Step 6 of 10: Blood pressure");
     expect(doc.querySelector(".stepper li")).toBe(first); // same elements, classes updated (keeps the pulse animation steady)
     expect([...doc.querySelectorAll(".stepper li.done")].length).toBe(5);
     sync.f.progress = null; sync.f.finish();
@@ -181,7 +181,7 @@ describe("Sync tab: Sync now", () => {
     const cookie = res.headers.getSetCookie().find(c => c.startsWith("zepp_dash="))!.split(";")[0]!;
     const body = await (await handler(new Request(ORIGIN + "/dashboard/api/status", { headers: { cookie } }))).json() as any;
     expect(Object.keys(body.sync.progress).sort()).toEqual(["chunk", "current", "mode", "overlap_days", "since", "steps", "total", "window_end", "window_start"]);
-    expect(body.sync.progress).toMatchObject({ current: 2, total: 9, window_start: "2026-10-13", mode: "overlap" });
+    expect(body.sync.progress).toMatchObject({ current: 2, total: 10, window_start: "2026-10-13", mode: "overlap" });
     expect(body.sync.overlap_days).toBe(2);
     expect(JSON.stringify(body)).not.toMatch(/SECRET|secret/);
     sync.f.running = false;
