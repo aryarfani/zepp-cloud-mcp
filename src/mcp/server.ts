@@ -59,7 +59,7 @@ export function createZeppMcpServer(services: Services, extras: ZeppMcpExtras = 
   }, async ({ date }) => safe(services, () => services.getDailySummary(date)));
 
   server.registerTool("get_sleep", {
-    description: "Get normalized sleep sessions overlapping an inclusive local-date range. Ranges up to 366 days are supported; longer-than-31-day ranges are fetched in several upstream requests and merged, so they take a few seconds.", inputSchema: z.object(rangeShape), annotations
+    description: "Get normalized sleep sessions overlapping an inclusive local-date range. Each session's sleep_date is the local date you woke up (the day it ended), not the bedtime date. Ranges up to 366 days are supported; longer-than-31-day ranges are fetched in several upstream requests and merged, so they take a few seconds.", inputSchema: z.object(rangeShape), annotations
   }, async ({ start_date, end_date }) => safe(services, () => services.getSleep(range(services, start_date, end_date))));
 
   server.registerTool("get_heart_rate", {

@@ -12,6 +12,7 @@ import { sportConfidence, sportKey } from "../zepp/sport-catalog";
 import { ANALYSIS_VERSION, type WorkoutAnalysis } from "../zepp/workout-analysis";
 import { strengthExerciseName } from "../zepp/strength-exercises";
 import type { WorkoutSummary } from "../zepp/workouts";
+import { localDateFromMs } from "../zepp/normalize";
 import { MIGRATIONS, type Migration } from "./migrations";
 
 type Param = string | number | null;
@@ -122,6 +123,30 @@ export class ZeppStore {
         this.db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(m.version, m.name, new Date().toISOString());
       });
     }
+  }
+
+  /**
+   * One-off data fix: key every stored night by its WAKE date (local date of ended_at in `timezone`). Earlier versions used the
+   * bedtime date, which put two nights under one date (summed to about 13 h) and left the next date empty. Runs once, in one
+   * transaction, recorded in data_fixes (no schema version change); later calls are a no-op. Nothing is fetched from Zepp, and the
+   * primary key (started_at) is untouched. Returns how many rows changed, or null when it had already run.
+   */
+  repairSleepDates(timezone: string): { rows: number; total: number } | null {
+    return this.transaction(() => {
+      this.db.exec("CREATE TABLE IF NOT EXISTS data_fixes (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL, detail TEXT)");
+      if (this.db.prepare("SELECT 1 FROM data_fixes WHERE name = 'sleep_date_wake_date'").get()) return null;
+      const rows = this.db.prepare("SELECT started_at, sleep_date, ended_at FROM sleep").all() as Array<{ started_at: string; sleep_date: string; ended_at: string }>;
+      const update = this.db.prepare("UPDATE sleep SET sleep_date = ? WHERE started_at = ?");
+      let changed = 0;
+      for (const r of rows) {
+        const ms = Date.parse(r.ended_at);
+        if (!Number.isFinite(ms)) continue;
+        const wake = localDateFromMs(ms, timezone);
+        if (wake !== r.sleep_date) { update.run(wake, r.started_at); changed++; }
+      }
+      this.db.prepare("INSERT INTO data_fixes (name, applied_at, detail) VALUES ('sleep_date_wake_date', ?, ?)").run(new Date().toISOString(), `${changed} of ${rows.length} rows re-keyed (${timezone})`);
+      return { rows: changed, total: rows.length };
+    });
   }
 
   schemaVersion(): number {

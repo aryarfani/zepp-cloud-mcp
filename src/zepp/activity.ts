@@ -101,7 +101,9 @@ function sleepFromBand(
   const awakeMinutes = awakeExplicit !== undefined && awakeExplicit >= 0 ? awakeExplicit : stageMinutes(sleep, 7);
   const scoreCandidate = numericValue(firstValue(sleep, ["ss", "score", "sleepScore"]));
   const result: SleepNight = {
-    sleep_date: localDateFromMs(startMs, timezone),
+    // A night belongs to the day it ends (the day you wake up), like the Zepp app and the band_data day id; never the bedtime date,
+    // or an early night (before midnight) would share a key with the previous night and leave the next day empty.
+    sleep_date: localDateFromMs(endMs, timezone),
     started_at: new Date(startMs).toISOString(),
     ended_at: new Date(endMs).toISOString(),
     duration_s: Math.max(0, Math.round((endMs - startMs) / 1000 - awakeMinutes * 60)),
@@ -154,8 +156,10 @@ export function normalizeBandData(raw: unknown, timezone = "Asia/Jakarta"): Band
     const slp = objectValue(summary.slp);
     if (slp) {
       const session = sleepFromBand(item, summary, slp, timezone);
-      if (session) sleep.push(session);
-      else diagnostics.push(`item ${index}: sleep session invalid`);
+      if (session) {
+        sleep.push(session);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date) && date !== session.sleep_date) diagnostics.push(`item ${index}: sleep wake date ${session.sleep_date} differs from the band_data day ${date}`);
+      } else diagnostics.push(`item ${index}: sleep session invalid`);
     }
   }
 

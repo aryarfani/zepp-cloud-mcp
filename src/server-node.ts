@@ -63,6 +63,10 @@ let analysisLoader: ReturnType<typeof createAnalysisLoader> | undefined;
 let manualSyncReady = false;
 try {
   const store = new ZeppStore(path.resolve(syncConfig.dbPath));
+  try {
+    const fix = store.repairSleepDates(env.USER_TIMEZONE);
+    if (fix) console.log('[zepp] sleep dates re-keyed to the wake date: ' + fix.rows + ' of ' + fix.total + ' rows');
+  } catch (e) { console.error('[zepp] sleep date repair failed: ' + (e instanceof Error ? e.name : 'error')); }
   try { const renamed = store.rederiveExerciseNames(); if (renamed) console.log('[zepp] re-derived ' + renamed + ' stored strength exercise name(s)'); } catch (e: any) { console.warn('[zepp] exercise name re-derive skipped: ' + (e?.message ?? 'error')); }
   try { const relabeled = store.rederiveSportTypes(); if (relabeled) console.log('[zepp] re-derived ' + relabeled + ' stored workout sport label(s)'); } catch (e: any) { console.warn('[zepp] sport label re-derive skipped: ' + (e?.message ?? 'error')); }
   const closed = store.closeInterruptedRuns(new Date().toISOString());

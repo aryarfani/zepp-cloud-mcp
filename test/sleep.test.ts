@@ -17,17 +17,17 @@ const config = parseConfig({
 });
 
 describe("sleep normalization", () => {
-  it("preserves verified stage modes and actual start-date sleep_date", () => {
-    const night = normalizeBandData(fixture).sleep.find(session => session.sleep_date === "2026-08-30");
+  it("preserves verified stage modes and keys the night by its wake date", () => {
+    const night = normalizeBandData(fixture).sleep.find(session => session.sleep_date === "2026-08-31");
     expect(night?.stages.map(s => s.stage)).toEqual(["deep", "light", "rem", "awake"]);
-    expect(night?.sleep_date).toBe("2026-08-30");
+    expect(night?.started_at).toBe("2026-08-30T15:00:00.000Z"); // bedtime 22:00 local on 30 Aug, woke 31 Aug
   });
 
   it("selects an overnight session by overlap with requested local day", () => {
     const range = parseDateRange("2026-08-31", "2026-08-31", "Asia/Jakarta");
     const sessions = selectSleepForRange(normalizeBandData(fixture).sleep, range);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]?.sleep_date).toBe("2026-08-30");
+    expect(sessions[0]?.sleep_date).toBe("2026-08-31");
   });
 
   it("fetches the previous band day for midnight-boundary sleep", async () => {
