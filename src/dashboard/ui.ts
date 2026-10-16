@@ -23,6 +23,12 @@ nav.menu a{position:relative;display:flex;align-items:center;gap:12px;padding:9p
 nav.menu a:hover{background:var(--panel2);color:var(--text)}
 nav.menu a.active{background:linear-gradient(90deg,rgba(45,212,191,.16),rgba(167,139,250,.08));color:var(--text);box-shadow:inset 0 0 0 1px rgba(45,212,191,.22)}
 nav.menu a.active svg{color:var(--teal)}
+nav.menu a.syncing svg{color:var(--teal);animation:navspin 1.1s linear infinite}
+nav.menu a.syncing{animation:navglow 2.2s ease-in-out infinite}
+.app.collapsed nav.menu a.syncing{animation:none}
+@keyframes navspin{to{transform:rotate(360deg)}}
+@keyframes navglow{0%,100%{box-shadow:0 0 6px 0 rgba(45,212,191,.1),inset 0 0 0 1px rgba(45,212,191,.16)}50%{box-shadow:0 0 16px 2px rgba(45,212,191,.3),inset 0 0 0 1px rgba(45,212,191,.38)}}
+@media (prefers-reduced-motion:reduce){nav.menu a.syncing,.app.collapsed nav.menu a.syncing{animation:none;box-shadow:0 0 12px 1px rgba(45,212,191,.24),inset 0 0 0 1px rgba(45,212,191,.32)}nav.menu a.syncing svg{animation:none}}
 svg.ico{width:19px;height:19px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .side form{margin:0}
 .logout{width:100%;display:flex;align-items:center;gap:12px;padding:9px 11px;border-radius:10px;background:none;border:0;color:var(--muted);font:inherit;cursor:pointer;text-align:left;white-space:nowrap}
@@ -388,7 +394,46 @@ export const DASHBOARD_JS = String.raw`(function () {
       if (r.status === 401) { window.location.href = "/dashboard/login"; throw new Error("Signed out"); }
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
-    }).then(function (j) { if (j && j.timezone) TZ = j.timezone; return j; });
+    }).then(function (j) { if (j && j.timezone) TZ = j.timezone; if (path === "status") watchObserve(j); return j; });
+  }
+
+  // ---- sync watch: the sidebar "Sync" item animates on every page while a sync is running ---------------------------------------------
+  // It piggybacks on /dashboard/api/status (every status read, from any page, updates it) and adds one light check on load, on each
+  // route change and after "Sync now"; while a run is in progress it re-checks every ~3 s, otherwise only a slow check (tab visible) so a
+  // scheduled run that starts while another page is open is picked up.
+  var WATCH_BUSY_MS = 3000, WATCH_IDLE_MS = 45000, WATCH_MIN_GAP_MS = 2500;
+  var watch = { running: false, timer: 0, last: 0 };
+  function watchNav() { return document.querySelector('nav.menu a[data-route="sync"]'); }
+  function watchApply(running) {
+    watch.running = running;
+    var a = watchNav();
+    if (a) {
+      a.classList.toggle("syncing", running);
+      var label = running ? "Sync (running)" : "Sync";
+      a.setAttribute("aria-label", label); a.setAttribute("title", label); a.setAttribute("data-tip", label);
+    }
+  }
+  function watchSchedule() {
+    if (watch.timer) clearTimeout(watch.timer);
+    watch.timer = setTimeout(watchCheck, watch.running ? WATCH_BUSY_MS : WATCH_IDLE_MS);
+  }
+  function watchObserve(j) {
+    watch.last = Date.now();
+    watchApply(!!(j && j.sync && j.sync.running));
+    watchSchedule();
+  }
+  function watchCheck() {
+    watch.timer = 0;
+    if (document.hidden && !watch.running) { watchSchedule(); return; }
+    var gap = Date.now() - watch.last;
+    if (gap < WATCH_MIN_GAP_MS) { watch.timer = setTimeout(watchCheck, WATCH_MIN_GAP_MS - gap); return; } // another status read just happened
+    api("status").catch(function () { watchSchedule(); });
+  }
+  /** Check now (load, route change, after Sync now); skipped when the status was read a moment ago. */
+  function watchKick(force) {
+    if (!force && Date.now() - watch.last < WATCH_MIN_GAP_MS) return;
+    if (watch.timer) { clearTimeout(watch.timer); watch.timer = 0; }
+    api("status").catch(function () { watchSchedule(); });
   }
 
   /** POST to a dashboard mutation route with the per-session CSRF token. Resolves { status, body }; a 401 sends the user to the login page. */
@@ -811,7 +856,7 @@ export const DASHBOARD_JS = String.raw`(function () {
       if (btn.disabled) return;
       showMsg("", ""); paint(true, null);
       apiPost("sync/run").then(function (r) {
-        if (r.status === 202 || r.status === 409) { paint(true, null); poll(); return; }
+        if (r.status === 202 || r.status === 409) { paint(true, null); watchApply(true); watchSchedule(); poll(); return; }
         paint(false);
         showMsg("bad", r.status === 429 ? "Too many manual syncs. Try again later." : r.status === 403 ? "Your session expired. Reload the page and try again." : r.status === 503 ? "Manual sync is not available." : "Could not start the sync.");
       }).catch(function () { paint(false); showMsg("bad", "Could not start the sync."); });
@@ -1635,6 +1680,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     $("subtitle").textContent = SUBTITLES[r.view] || "";
     Array.prototype.forEach.call(document.querySelectorAll("nav.menu a"), function (a) { a.classList.toggle("active", a.getAttribute("data-route") === r.view); });
     closeMenu();
+    watchKick(false);
     renderRange(r.view);
     // Opening another workout must not rebuild the list: only the highlight and the detail pane change.
     var live = state.wkUi;
@@ -1672,6 +1718,7 @@ export const DASHBOARD_JS = String.raw`(function () {
     $("menu").addEventListener("click", function () { $("sidebar").classList.toggle("open"); $("scrim").classList.toggle("open"); });
     $("scrim").addEventListener("click", closeMenu);
     window.addEventListener("hashchange", route);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) watchKick(false); });
     route();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();

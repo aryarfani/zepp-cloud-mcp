@@ -33,7 +33,7 @@ function fakeSync(opts: { ok?: boolean; progress?: any; running?: boolean; withS
   return { f, status, ...(opts.withStart === false ? {} : { startSync }) };
 }
 
-async function boot(sync: ReturnType<typeof fakeSync>) {
+async function boot(sync: ReturnType<typeof fakeSync>, hash = "#/sync") {
   const data = new DashboardData(file, { timezone: "Asia/Jakarta" });
   opened.push(data);
   const handler = createDashboard({ ownerPassword: PASSWORD, data, failDelayMs: 0, syncStatus: sync.status, ...(sync.startSync ? { startSync: sync.startSync } : {}) });
@@ -46,7 +46,7 @@ async function boot(sync: ReturnType<typeof fakeSync>) {
   vc.on("jsdomError", (e: Error) => errors.push(e.message));
   const calls: Array<{ url: string; method: string; headers: Record<string, string> }> = [];
   const dom = new JSDOM(html, {
-    url: ORIGIN + "/dashboard#/sync", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: vc,
+    url: ORIGIN + "/dashboard" + hash, runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(window: any) {
       window.fetch = async (u: string, init: any = {}) => {
         calls.push({ url: u, method: init.method ?? "GET", headers: init.headers ?? {} });
@@ -202,4 +202,71 @@ describe("Sync tab: Sync now", () => {
     await wait(2500);
     expect(doc.querySelector(".syncbtn").disabled).toBe(false);
   }, 15000);
+});
+
+describe("sidebar Sync item while a sync runs (every page)", () => {
+  const nav = (doc: Element) => doc.querySelector('nav.menu a[data-route="sync"]');
+  const statusCalls = (calls: Array<{ url: string }>) => calls.filter(c => c.url === "/dashboard/api/status").length;
+
+  it("is plain when idle, on a non-Sync page, and does not poll", async () => {
+    const { doc, calls } = await boot(fakeSync(), "#/weight");
+    expect(nav(doc).classList.contains("syncing")).toBe(false);
+    expect(nav(doc).getAttribute("aria-label")).toBe("Sync");
+    const before = statusCalls(calls);
+    await wait(3600); // longer than the running poll interval: an idle page must not poll that fast
+    expect(statusCalls(calls)).toBe(before);
+  }, 15000);
+
+  it("animates on a non-Sync page when a sync is already running, with no badge or step text", async () => {
+    const { doc } = await boot(fakeSync({ running: true, progress: { steps: [{ id: "daily_sleep", label: "Daily & sleep" }], current: 0, window_start: "2026-10-13", window_end: "2026-10-15", mode: "overlap" } }), "#/sleep");
+    const a = nav(doc);
+    expect(a.classList.contains("syncing")).toBe(true);
+    expect(a.getAttribute("aria-label")).toBe("Sync (running)");
+    expect(a.getAttribute("title")).toBe("Sync (running)");
+    expect([...a.children].map((c: Element) => c.tagName.toLowerCase())).toEqual(["svg", "span"]); // icon + label only, no badge
+    expect(text(a)).toBe("Sync");
+    expect(doc.querySelectorAll("nav.menu a.syncing").length).toBe(1); // only the Sync item
+  });
+
+  it("follows the status: picked up on a route change, polled while running, and stops when the run ends", async () => {
+    const sync = fakeSync();
+    const { doc, calls } = await boot(sync, "#/overview");
+    expect(nav(doc).classList.contains("syncing")).toBe(false);
+    sync.f.running = true; // e.g. the scheduled run starts while this page is open
+    await wait(2700); // past the minimum gap between checks
+    doc.defaultView.location.hash = "#/weight";
+    await wait(500);
+    expect(nav(doc).classList.contains("syncing")).toBe(true);
+    const n = statusCalls(calls);
+    sync.f.running = false;
+    await wait(3600); // the busy poll (about 3 s) notices the run ended without any navigation
+    expect(nav(doc).classList.contains("syncing")).toBe(false);
+    expect(nav(doc).getAttribute("aria-label")).toBe("Sync");
+    expect(statusCalls(calls)).toBeGreaterThan(n);
+    const after = statusCalls(calls);
+    await wait(3600);
+    expect(statusCalls(calls)).toBe(after); // idle again: no fast polling
+  }, 30000);
+
+  it("starts animating right after clicking Sync now (and on the Sync page itself)", async () => {
+    const sync = fakeSync();
+    const { doc } = await boot(sync);
+    expect(nav(doc).classList.contains("syncing")).toBe(false);
+    doc.querySelector(".syncbtn").click();
+    await wait(200);
+    expect(nav(doc).classList.contains("syncing")).toBe(true);
+    sync.f.finish();
+    await wait(2500);
+    expect(nav(doc).classList.contains("syncing")).toBe(false);
+  }, 15000);
+
+  it("has the spin and glow styles, the collapsed variant and the reduced-motion fallback", async () => {
+    const { doc } = await boot(fakeSync());
+    const css = [...doc.querySelectorAll("style")].map((e: Element) => e.textContent).join("\n");
+    expect(css).toContain("nav.menu a.syncing svg{color:var(--teal);animation:navspin");
+    expect(css).toContain("nav.menu a.syncing{animation:navglow");
+    expect(css).toContain("@keyframes navspin{to{transform:rotate(360deg)}}");
+    expect(css).toContain(".app.collapsed nav.menu a.syncing{animation:none}"); // collapsed: just the spinning icon
+    expect(css).toMatch(/@media \(prefers-reduced-motion:reduce\)\{nav\.menu a\.syncing,\.app\.collapsed nav\.menu a\.syncing\{animation:none;box-shadow:[^}]+\}nav\.menu a\.syncing svg\{animation:none\}\}/);
+  });
 });
