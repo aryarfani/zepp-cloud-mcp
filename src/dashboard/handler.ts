@@ -4,6 +4,7 @@ import { RateLimiter, clientIp, isSameOriginPost, parseCookies, randomToken, saf
 import type { DashboardData } from "./data";
 import { SESSION_COOKIE, SESSION_TTL_S, createSessionManager, deriveSessionKeyMaterial, type SessionManager } from "./session";
 import { buildTrack, fileBase, toGpx, toTcx, type ExportWorkout } from "./export";
+import { iconResponse } from "./icons";
 import { renderDashboardHtml, renderLoginHtml } from "./ui";
 import type { WorkoutAnalysis } from "../zepp/workout-analysis";
 
@@ -336,6 +337,9 @@ export function createDashboard(opts: DashboardOptions): (request: Request) => P
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const method = request.method;
+
+    const icon = iconResponse(path, method); // the app icon is public, nothing else is
+    if (icon) return icon;
 
     if (path === "/dashboard/login") {
       if (method === "GET") {

@@ -1,5 +1,6 @@
 import { createMcpHandler } from "agents/mcp/server";
 import { requireBearer } from "./auth";
+import { iconResponse } from "./dashboard/icons";
 import { parseConfig } from "./config";
 import { createZeppMcpServer } from "./mcp/server";
 import { createServices } from "./services";
@@ -26,6 +27,8 @@ export function createApp(deps: AppDeps): (request: Request) => Promise<Response
     if (url.pathname === "/health" && request.method === "GET") {
       return Response.json({ status: "ok", runtime: "node", port: deps.port ?? 8788 });
     }
+    // Browsers ask for /favicon.ico at the root; served only where the dashboard exists (the Node server).
+    if (deps.dashboard && url.pathname === "/favicon.ico") return iconResponse(url.pathname, request.method)!;
     if (url.pathname === "/dashboard" || url.pathname.startsWith("/dashboard/")) {
       return deps.dashboard ? deps.dashboard(request) : new Response("Not Found", { status: 404, headers: { "content-type": "text/plain" } });
     }

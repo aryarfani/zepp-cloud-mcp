@@ -204,7 +204,10 @@ describe("dashboard page", () => {
   it("makes no external requests and builds the DOM without innerHTML or inline handlers", () => {
     const html = renderDashboardHtml("abc") + renderLoginHtml({ nonce: "abc", csrf: "x" });
     expect(html).not.toMatch(/<script[^>]*\ssrc=/i);
-    expect(html).not.toMatch(/<link[^>]*href=/i);
+    // the only links are same-origin icons (no stylesheets, no external hosts)
+    const links = [...html.matchAll(/<link\b[^>]*>/gi)].map(m => m[0]);
+    expect(links.length).toBeGreaterThan(0);
+    for (const l of links) { expect(l).toMatch(/rel="(icon|shortcut icon|apple-touch-icon)"/); expect(l).toMatch(/href="\/(dashboard\/)?(favicon|apple-touch-icon)[^"]*"/); }
     expect(html).not.toMatch(/@import|url\(\s*["']?(https?:)?\/\//i); // gradients use local fragment references only
     expect(html.replace(/<script[\s\S]*<\/script>/, "")).not.toMatch(/<img\b/i); // map tiles are created by the script, never in the page markup
     expect(html).not.toMatch(/\son[a-z]+=/i);

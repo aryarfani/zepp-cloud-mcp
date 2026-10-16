@@ -1841,7 +1841,9 @@ export const DASHBOARD_JS = String.raw`(function () {
 
 const HEAD = (nonce: string, title: string) =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
-  `<meta name="robots" content="noindex,nofollow"><meta name="color-scheme" content="dark"><title>${escapeHtml(title)}</title>` +
+  `<meta name="robots" content="noindex,nofollow"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b1424">` +
+  `<link rel="icon" href="/dashboard/favicon.svg" type="image/svg+xml"><link rel="icon" href="/dashboard/favicon-32.png" type="image/png" sizes="32x32"><link rel="icon" href="/dashboard/favicon-16.png" type="image/png" sizes="16x16">` +
+  `<link rel="shortcut icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/dashboard/apple-touch-icon.png"><title>${escapeHtml(title)}</title>` +
   `<style nonce="${escapeHtml(nonce)}">${CSS}</style></head>`;
 
 /** Simple 24x24 line icons (stroke paths). */
