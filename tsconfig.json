@@ -6,8 +6,8 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-    "skipLibCheck": false,
-    "types": ["./worker-configuration.d.ts", "node"],
+    "skipLibCheck": true,
+    "types": ["./worker-configuration.d.ts", "node", "@cloudflare/vitest-plugin/types"],
     "lib": ["ES2024", "WebWorker"]
   },
   "include": ["src", "scripts", "test", "vitest.config.ts", "vitest.node.config.ts", "worker-configuration.d.ts"]

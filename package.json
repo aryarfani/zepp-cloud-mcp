@@ -1,9 +1,39 @@
 {
   "name": "zepp-cloud-mcp",
   "version": "0.1.0",
+  "description": "Read-only MCP server for Amazfit / Zepp health and workout data, with OAuth 2.1, SQLite sync and a self-hosted dashboard.",
+  "license": "AGPL-3.0-or-later",
+  "author": "Ary Arfani",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aryarfani/zepp-cloud-mcp.git"
+  },
+  "homepage": "https://github.com/aryarfani/zepp-cloud-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/aryarfani/zepp-cloud-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "zepp",
+    "amazfit",
+    "huami",
+    "fitness",
+    "health",
+    "sleep",
+    "hrv",
+    "oauth2",
+    "cloudflare-workers",
+    "chatgpt",
+    "claude"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "tsx src/server-node.ts",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
