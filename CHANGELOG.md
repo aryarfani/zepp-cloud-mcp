@@ -9,6 +9,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - README rewrite with screenshots, configuration reference, deploy guides and tools table.
 - `npm start` script for the Node server.
 
+### Fixed
+- Cloudflare Worker: every Zepp request failed with `upstream_error` because the native `fetch` was invoked as a method of `ZeppClient`, which workerd rejects with "Illegal invocation". The client now calls it with the global receiver.
+
 ### Changed
 - `tsconfig.json` loads the `cloudflare:test` types and skips library type checks, so `tsc --noEmit` is clean.
 
