@@ -83,7 +83,9 @@ export class ZeppClient {
   }
 
   private fetchOnce(url: URL): Promise<Response> {
-    return this.fetchImpl(new Request(url, {
+    // Call with the global receiver: workerd throws "Illegal invocation" when
+    // the native fetch is invoked as a method of another object.
+    return this.fetchImpl.call(globalThis, new Request(url, {
       method: "GET",
       redirect: "manual",
       headers: {

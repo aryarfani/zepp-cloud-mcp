@@ -38,4 +38,15 @@ describe("ZeppClient", () => {
     await expect(client.get(buildZeppRequest("heartRate", { userId: config.ZEPP_USER_ID, startTime: 1, endTime: 2, limit: 1, type: 2 })))
       .rejects.toMatchObject({ kind: "upstream_error" });
   });
+
+  it("invokes fetch with the global receiver (workerd rejects other receivers)", async () => {
+    let receiver: unknown = "unset";
+    const fetchSpy = function (this: unknown) {
+      receiver = this;
+      return Promise.resolve(Response.json({ ok: true }));
+    } as unknown as typeof fetch;
+    const client = new ZeppClient(config, fetchSpy);
+    await client.get(buildZeppRequest("heartRate", { userId: config.ZEPP_USER_ID, startTime: 1, endTime: 2, limit: 1, type: 2 }));
+    expect(receiver).toBe(globalThis);
+  });
 });
