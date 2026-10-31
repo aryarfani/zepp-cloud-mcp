@@ -15,6 +15,10 @@ import { createDashboard, type DashboardLive } from './dashboard/handler';
 import { fetchPlannedWorkouts, fetchWatchLastSync } from './zepp/live-probe';
 import { createAnalysisLoader } from './dashboard/analysis-loader';
 import { DashboardData } from './dashboard/data';
+import { createLocalWorkoutAccess, type LocalWorkoutAccess } from './mcp/local-workouts';
+import { createWorkoutRefresher } from './sync/workout-refresh';
+import { fetchWorkoutHistoryWithCoverage, fetchWorkoutRaw } from './zepp/workouts';
+import { InputError } from './errors';
 if (typeof (globalThis as any).caches === 'undefined') {
   (globalThis as any).caches = { default: createMemoryCache() } as any;
   console.log('[zepp] in-memory cache enabled (TTL honored, max ' + DEFAULT_MAX_CACHE_ENTRIES + ' entries)');
@@ -63,6 +67,8 @@ let syncService: SyncService | null = null;
 let analysisLoader: ReturnType<typeof createAnalysisLoader> | undefined;
 let manualSyncReady = false;
 let liveProbes: DashboardLive | undefined;
+const unavailable = async (): Promise<never> => { throw new InputError('The local workout store is unavailable.'); };
+let localWorkouts = { list: unavailable, get: unavailable, sets: unavailable, create: unavailable, update: unavailable, remove: unavailable, discardConflict: unavailable } as LocalWorkoutAccess;
 try {
   const store = new ZeppStore(path.resolve(syncConfig.dbPath));
   try {
@@ -93,6 +99,16 @@ try {
     // Status-only service so the tool still works: reuse a stub context that is never used for requests.
     syncService = createSyncService({ ctx: { config: { ...env, regionLabel: 'n/a' }, zepp: null as any } as ServiceContext, store, config: { ...syncConfig, enabled: false } });
   }
+  const hours = Number(process.env.MCP_WORKOUT_MAX_AGE_HOURS ?? 24);
+  const freshnessMs = (Number.isFinite(hours) && hours > 0 && hours <= 720 ? hours : 24) * 3_600_000;
+  const ctx = zeppCtx;
+  const refresh = createWorkoutRefresher({
+    store, timezone: env.USER_TIMEZONE, freshnessMs, requestDelayMs: syncConfig.requestDelayMs,
+    ...(manualSyncReady && syncService ? { sync: syncService } : {}),
+    history: range => ctx ? fetchWorkoutHistoryWithCoverage(ctx, range) : Promise.reject(new Error('Zepp unavailable')),
+    detail: id => ctx ? fetchWorkoutRaw(ctx, id) : Promise.reject(new Error('Zepp unavailable'))
+  });
+  localWorkouts = createLocalWorkoutAccess({ store, timezone: env.USER_TIMEZONE, refresh });
   console.log('[zepp] local store ready at ' + syncConfig.dbPath);
 } catch (e: any) {
   console.error('[zepp] local store unavailable, sync_status disabled: ' + (e?.message ?? 'error'));
@@ -118,7 +134,7 @@ if (ownerPassword.length >= 16) {
   });
   console.log('[zepp] dashboard enabled at /dashboard');
 }
-const app = createApp({ env, oauth, port: PORT, ...(syncService ? { syncStatus: () => syncService!.status() } : {}), ...(dashboard ? { dashboard } : {}) });
+const app = createApp({ env, oauth, port: PORT, localWorkouts, ...(syncService ? { syncStatus: () => syncService!.status() } : {}), ...(dashboard ? { dashboard } : {}) });
 async function handleNodeRequest(nodeReq: http.IncomingMessage, nodeRes: http.ServerResponse) {
   const chunks: Buffer[] = [];
   let size = 0;

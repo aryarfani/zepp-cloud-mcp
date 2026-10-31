@@ -1,5 +1,18 @@
 # MCP client setup
 
+## Node deployment: local workout corrections
+
+The Node deployment at `https://zepp.arfani.my.id/mcp` supports OAuth and the configured static bearer token. Authenticated clients can read workout summaries and strength sets from the local SQLite database and can create, update and delete individual sets. These changes affect the local MCP and dashboard only; they do not modify the Zepp app or Zepp Cloud. Treat access to this endpoint as write access to personal workout data.
+
+1. Use `list_workouts` to obtain a `workout_id`, then `get_strength_sets` to obtain each stable set `id`.
+2. Use `create_strength_set` with `workout_id`, `exercise`, `reps` and `weight_kg`; use `null` weight for bodyweight. Use `update_strength_set` with `workout_id`, `set_id` and the fields to change. Use `delete_strength_set` with `workout_id` and `set_id` to delete a set locally. A weight of zero is distinct from bodyweight.
+3. Reads may start a Zepp sync if the last successful sync is older than `MCP_WORKOUT_MAX_AGE_HOURS` (default 24, range greater than 0 through 720). Missing historical coverage and stale strength detail are fetched as needed. A read waits at most 25 seconds; the refresh may continue in the background. Inspect `status`, `meta.partial` and `meta.warnings` before treating results as complete. Each refresh is limited to 40 history requests and uses `SYNC_REQUEST_DELAY_MS` between requests. Saturated or otherwise incomplete history is reported, not marked covered.
+4. Local edits are kept separately from source sets. Each returned set has `origin` (`zepp` or `manual`) and a `corrected` flag. Source matching uses a hash of the full Zepp set row without its position; duplicate or changed rows are treated as ambiguous. Existing sets imported before this feature do not have a source fingerprint until refreshed. When a source row cannot be matched unambiguously, `get_strength_sets` returns its saved original and correction in `conflicts`; it does not silently attach the correction to another set. Review and reapply the change to the correct current set, then call `discard_strength_conflict` with `workout_id` and `conflict_id` to remove that unmatched correction. Discarding is permanent.
+
+Exercise names without a verified catalog ID are shown as custom and do not contribute an invented muscle estimate. Current OAuth and bearer credentials authorize the new write operations; reconnect or refresh the MCP client if its tool list is cached. The Node server requires its local store for workout tools and reports an error if the store is unavailable. Workout samples, GPS routes and other health-data MCP tools retain their previous upstream behavior.
+
+The Node store migrates to schema version 5 on startup. Before deploying, take a consistent backup of the database including its WAL state (for example, stop the service before archiving `data/`), as well as the application and configuration. An older build refuses a v5 database; rollback requires a compatible database restore. Such a restore can lose corrections and synced data written after the backup, so preserve the newer database separately before restoring.
+
 Both deployments expose a Streamable HTTP MCP endpoint at `/mcp`:
 
 - **Node server:** `https://<your-host>/mcp`. It accepts the static bearer `MCP_SECRET`. When `OAUTH_OWNER_PASSWORD` is set (16 characters or more), it also accepts OAuth 2.1 access tokens: dynamic client registration, PKCE S256, refresh tokens.
@@ -13,9 +26,11 @@ Never configure the Zepp `apptoken` as the MCP client credential. It stays on th
 
 ## Tools
 
-The Node server registers 19 read-only tools. The Worker registers 18, because `sync_status` needs the local database:
+The Node server registers the following read tools plus four local write tools. The Worker registers the read tools except `sync_status`, because it needs the local database:
 
 `zepp_status`, `get_daily_summary`, `get_sleep`, `get_heart_rate`, `get_recovery`, `get_training_status`, `list_workouts`, `get_workout`, `get_workout_samples`, `get_workout_route`, `get_strength_sets`, `get_metric_series`, `get_raw_metric`, `get_weight`, `get_blood_pressure`, `get_hybrid_charge`, `get_emotion_events`, `list_event_types`, `sync_status` (Node only).
+
+Node-only write tools: `create_strength_set`, `update_strength_set`, `delete_strength_set`, and `discard_strength_conflict`.
 
 Date-range tools accept inclusive `YYYY-MM-DD` bounds and up to 366 days. Ranges longer than 31 days are fetched in several upstream requests and merged. `get_raw_metric` is limited to 31 days.
 

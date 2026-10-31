@@ -172,31 +172,51 @@ function timestampInRange(summary: WorkoutSummary, range: DateRange): boolean {
 
 export interface WorkoutHistoryItem { summary: WorkoutSummary; raw: Record<string, unknown> }
 
-async function collectWorkoutHistory(ctx: ServiceContext, range: DateRange, wanted: string | undefined, cappedLimit: number): Promise<WorkoutHistoryItem[]> {
+async function collectWorkoutHistoryResult(ctx: ServiceContext, range: DateRange, wanted: string | undefined, cappedLimit: number): Promise<{ items: WorkoutHistoryItem[]; complete: boolean }> {
   const output: WorkoutHistoryItem[] = [];
   const seen = new Set<string>();
   let startTrackId = range.fromSec;
   let stopTrackId = range.toSec;
+  let complete = false;
+  let normalizedAll = true;
   for (let page = 0; page < MAX_HISTORY_PAGES && output.length < cappedLimit; page++) {
     const raw = await ctx.zepp.get(buildZeppRequest("sportHistory", { userid: ctx.config.ZEPP_USER_ID, startTrackId, stopTrackId, need_sub_data: 1, type: 0 }));
     for (const item of historyItems(raw)) {
       const summary = normalizeWorkoutSummary(item, range.timezone);
-      if (!summary || seen.has(summary.workout_id) || !timestampInRange(summary, range)) continue;
+      if (!summary) { normalizedAll = false; continue; }
+      if (seen.has(summary.workout_id) || !timestampInRange(summary, range)) continue;
       if (wanted && summary.activity_type !== wanted) continue;
       seen.add(summary.workout_id);
       output.push({ summary, raw: objectValue(item) ?? {} });
       if (output.length >= cappedLimit) break;
     }
     const next = nextCursor(raw);
-    if (!next || Number(next) <= 0 || Number(next) === stopTrackId) break;
+    if (!next || Number(next) <= 0) {
+      const root = objectValue(raw); const data = root ? objectValue(root.data) : undefined;
+      const rawNext = data?.next ?? root?.next;
+      const nextNumber = numericValue(rawNext);
+      const normalEnd = rawNext === undefined || rawNext === null || (nextNumber !== undefined && nextNumber <= 0);
+      complete = normalizedAll && normalEnd && output.length < cappedLimit;
+      break;
+    }
+    if (Number(next) === stopTrackId) break;
     stopTrackId = Number(next);
   }
-  return output.sort((a, b) => b.summary.started_at.localeCompare(a.summary.started_at));
+  return { items: output.sort((a, b) => b.summary.started_at.localeCompare(a.summary.started_at)), complete };
+}
+
+async function collectWorkoutHistory(ctx: ServiceContext, range: DateRange, wanted: string | undefined, cappedLimit: number): Promise<WorkoutHistoryItem[]> {
+  return (await collectWorkoutHistoryResult(ctx, range, wanted, cappedLimit)).items;
 }
 
 /** Workout history for a range with each upstream history item kept alongside its normalized summary (used by the sync). Not cached. */
 export async function fetchWorkoutHistoryWithRaw(ctx: ServiceContext, range: DateRange, limit = 200): Promise<WorkoutHistoryItem[]> {
   return collectWorkoutHistory(ctx, range, undefined, Math.max(1, Math.min(200, Math.floor(limit))));
+}
+
+/** Includes a conservative pagination-completeness flag for local coverage tracking. */
+export async function fetchWorkoutHistoryWithCoverage(ctx: ServiceContext, range: DateRange): Promise<{ items: WorkoutHistoryItem[]; complete: boolean }> {
+  return collectWorkoutHistoryResult(ctx, range, undefined, 200);
 }
 
 export async function listWorkouts(ctx: ServiceContext, range: DateRange, activityType?: string, limit = 50): Promise<Envelope<WorkoutSummary[]>> {

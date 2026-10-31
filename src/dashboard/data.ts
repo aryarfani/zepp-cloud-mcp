@@ -64,7 +64,7 @@ export class DashboardData {
     return this.all(sql, ...params)[0] ?? null;
   }
   private count(table: string): number {
-    return COVERAGE.some(([t]) => t === table) || ["strength_sets", "sync_runs", "charge_insights", "event_streams"].includes(table)
+    return COVERAGE.some(([t]) => t === table) || ["strength_sets", "effective_strength_sets", "sync_runs", "charge_insights", "event_streams"].includes(table)
       ? Number(this.get(`SELECT COUNT(*) AS c FROM ${table}`)?.c ?? 0) : 0;
   }
 
@@ -249,7 +249,7 @@ export class DashboardData {
     const limit = Math.max(1, Math.min(WORKOUT_PAGE_MAX, opts.limit));
     const rows = this.all(
       `SELECT workout_id, activity_type, zepp_type, started_at, started_date, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, training_load,
-              (SELECT COUNT(*) FROM strength_sets s WHERE s.workout_id = w.workout_id) AS strength_sets
+              (SELECT COUNT(*) FROM effective_strength_sets s WHERE s.workout_id = w.workout_id) AS strength_sets
          FROM workouts w${clause} ORDER BY started_at DESC LIMIT ? OFFSET ?`, ...params, limit, Math.max(0, opts.offset));
     const extras = this.rowExtras(rows);
     return {
@@ -271,7 +271,7 @@ export class DashboardData {
     if (strengthIds.length) {
       const marks = strengthIds.map(() => "?").join(",");
       const byWorkout = new Map<string, number[]>();
-      for (const r of this.all(`SELECT workout_id, action_type FROM strength_sets WHERE workout_id IN (${marks}) GROUP BY workout_id, action_type`, ...strengthIds)) {
+      for (const r of this.all(`SELECT workout_id, action_type FROM effective_strength_sets WHERE workout_id IN (${marks}) GROUP BY workout_id, action_type`, ...strengthIds)) {
         const list = byWorkout.get(String(r.workout_id)) ?? []; list.push(Number(r.action_type)); byWorkout.set(String(r.workout_id), list);
       }
       for (const [id, types] of byWorkout) { const m = aggregateMuscles(types); if (m) muscles.set(id, m); }
@@ -307,10 +307,10 @@ export class DashboardData {
       `SELECT workout_id, activity_type, zepp_type, started_at, started_date, ended_at, duration_s, distance_m, calories_kcal, avg_hr_bpm, max_hr_bpm, training_load,
               vo2max_ml_kg_min, strength_checked FROM workouts WHERE workout_id = ?`, id);
     if (!w) return null;
-    const sets = this.all("SELECT seq, set_no, action_type, reps, weight_kg, duration_s, avg_hr_bpm FROM strength_sets WHERE workout_id = ? ORDER BY seq", id)
+    const sets = this.all("SELECT source_id, seq, set_no, exercise, action_type, reps, weight_kg, duration_s, avg_hr_bpm FROM effective_strength_sets WHERE workout_id = ? ORDER BY seq", id)
       .map(s => {
         const actionType = Number(s.action_type);
-        const name = strengthExerciseName(actionType);
+        const name = actionType < 0 ? String(s.exercise) : strengthExerciseName(actionType);
         return { ...s, exercise: name, known: !name.startsWith("unknown_") };
       });
     // Estimated from the exercise ids of the sets (null when no id has muscle data, e.g. unknown_0 / unassigned only).
@@ -342,12 +342,12 @@ export class DashboardData {
   exercises() {
     if (!this.available()) return { available: false, exercises: [] };
     const rows = this.all(
-      `SELECT s.action_type AS action_type, COUNT(*) AS sets, COUNT(DISTINCT s.workout_id) AS workouts, MIN(w.started_date) AS first_date, MAX(w.started_date) AS last_date,
+      `SELECT s.action_type AS action_type, s.exercise AS exercise, COUNT(*) AS sets, COUNT(DISTINCT s.workout_id) AS workouts, MIN(w.started_date) AS first_date, MAX(w.started_date) AS last_date,
               AVG(s.reps) AS avg_reps, MAX(s.weight_kg) AS max_weight_kg, MAX(w.workout_id) AS example_workout_id
-         FROM strength_sets s JOIN workouts w ON w.workout_id = s.workout_id GROUP BY s.action_type ORDER BY COUNT(*) DESC`);
+         FROM effective_strength_sets s JOIN workouts w ON w.workout_id = s.workout_id GROUP BY s.action_type, s.exercise ORDER BY COUNT(*) DESC`);
     const exercises = rows.map(r => {
-      const name = strengthExerciseName(Number(r.action_type));
-      return { ...r, name, known: !name.startsWith("unknown_"), source: strengthExerciseSource(Number(r.action_type)) };
+      const name = Number(r.action_type) < 0 ? String(r.exercise) : strengthExerciseName(Number(r.action_type));
+      return { ...r, name, known: !name.startsWith("unknown_"), source: Number(r.action_type) < 0 ? "custom" : strengthExerciseSource(Number(r.action_type)) };
     });
     return { available: true, exercises, unknown_count: exercises.filter(e => !e.known).length };
   }
@@ -366,7 +366,7 @@ export class DashboardData {
       available: true, timezone: this.timezone, now: new Date(this.now()).toISOString(),
       last_run: run(""), last_success: run(" WHERE ok = 1"),
       recent_runs: this.all("SELECT id, trigger, started_at, ok, status, error_kind FROM sync_runs ORDER BY id DESC LIMIT 5"),
-      coverage, strength_sets: this.count("strength_sets"), charge_insights: this.count("charge_insights"),
+      coverage, strength_sets: this.count("effective_strength_sets"), charge_insights: this.count("charge_insights"),
       schema_version: Number(this.get("SELECT MAX(version) AS v FROM schema_migrations")?.v ?? 0),
       db_bytes: bytes, ...(extra ? { sync: extra } : {})
     };

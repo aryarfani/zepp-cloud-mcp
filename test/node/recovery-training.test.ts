@@ -75,10 +75,10 @@ describe("migration 4 (recovery)", () => {
     raw.prepare("INSERT INTO sync_runs (trigger, started_at, ok, status, range_start, range_end) VALUES ('manual', 'x', 1, 'ok', '2026-10-01', '2026-10-02')").run();
     raw.close();
     const s = new ZeppStore(f); stores.push(s);
-    expect(s.stats().schema_version).toBe(4);
+    expect(s.stats().schema_version).toBe(MIGRATIONS.at(-1)!.version);
     s.close();
     const again = new ZeppStore(f); stores.push(again);
-    expect(again.stats().schema_version).toBe(4);
+    expect(again.stats().schema_version).toBe(MIGRATIONS.at(-1)!.version);
     expect(again.lastRun()).toMatchObject({ trigger: "manual", counts: { recovery_days: 0 } });
     again.close();
     const check = new DatabaseSync(f);

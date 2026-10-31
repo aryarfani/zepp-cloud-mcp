@@ -156,10 +156,17 @@ export async function runSync(
           for (const workoutId of pendingStrength) {
             await pause();
             try {
+              const revision = store.strengthSourceRevision(workoutId);
               const detail = await fetchWorkoutRaw(ctx, workoutId);
               const parsed = parseStrengthLap(detail.lap);
-              counts.strength_sets += store.replaceStrengthSets(workoutId, parsed.sets);
-              if (parsed.malformed) counts.warnings++;
+              if (typeof detail.lap !== "string" || parsed.malformed || !parsed.sets.length) {
+                counts.warnings++;
+                log("strength detail incomplete; existing data kept for retry");
+                continue;
+              }
+              const replaced = store.replaceStrengthSetsIfUnchanged(workoutId, parsed.sets, parsed.sourceKeys, revision);
+              if (replaced === null) { counts.warnings++; log("strength detail changed during sync; newer data kept"); }
+              else counts.strength_sets += replaced;
             } catch (e) {
               // A single unreadable workout detail must not abort the run; it stays unchecked and is retried next sync.
               if (e instanceof ZeppError && !FATAL_KINDS.has(e.kind)) { counts.warnings++; log(`strength detail skipped (${e.kind})`); continue; }

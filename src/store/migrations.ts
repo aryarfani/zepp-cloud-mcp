@@ -202,5 +202,65 @@ CREATE TABLE recovery_days (
 );
 ALTER TABLE sync_runs ADD COLUMN recovery_rows INTEGER NOT NULL DEFAULT 0;
 `
+  },
+  {
+    version: 5,
+    name: "strength set corrections",
+    sql: `
+ALTER TABLE strength_sets ADD COLUMN source_id TEXT;
+ALTER TABLE strength_sets ADD COLUMN source_fingerprint TEXT;
+UPDATE strength_sets SET source_id = lower(hex(randomblob(16)));
+CREATE UNIQUE INDEX idx_strength_source_id ON strength_sets (workout_id, source_id);
+CREATE TRIGGER strength_source_id_default AFTER INSERT ON strength_sets WHEN NEW.source_id IS NULL
+BEGIN
+  UPDATE strength_sets SET source_id = lower(hex(randomblob(16))) WHERE workout_id = NEW.workout_id AND seq = NEW.seq;
+END;
+CREATE TABLE strength_corrections (
+  workout_id TEXT NOT NULL REFERENCES workouts(workout_id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  source_json TEXT NOT NULL,
+  exercise TEXT,
+  reps INTEGER,
+  weight_kg REAL,
+  weight_set INTEGER NOT NULL DEFAULT 0,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (workout_id, source_id)
+);
+CREATE TABLE strength_manual_sets (
+  workout_id TEXT NOT NULL REFERENCES workouts(workout_id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  set_no INTEGER NOT NULL,
+  exercise TEXT NOT NULL,
+  reps INTEGER NOT NULL,
+  weight_kg REAL,
+  PRIMARY KEY (workout_id, source_id)
+);
+CREATE TABLE workout_sync_coverage (
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  PRIMARY KEY (start_date, end_date)
+);
+CREATE TABLE strength_detail_refresh (
+  workout_id TEXT PRIMARY KEY REFERENCES workouts(workout_id) ON DELETE CASCADE,
+  fetched_at TEXT NOT NULL
+);
+CREATE TABLE strength_source_revisions (
+  workout_id TEXT PRIMARY KEY REFERENCES workouts(workout_id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL
+);
+CREATE VIEW effective_strength_sets AS
+SELECT s.workout_id, s.source_id, s.seq, s.set_no,
+       COALESCE(c.exercise, s.exercise) AS exercise,
+       CASE WHEN c.exercise IS NOT NULL AND c.exercise <> s.exercise THEN -1 ELSE s.action_type END AS action_type,
+       COALESCE(c.reps, s.reps) AS reps,
+       CASE WHEN c.weight_set = 1 THEN c.weight_kg ELSE s.weight_kg END AS weight_kg,
+       s.duration_s, s.avg_hr_bpm, 'zepp' AS origin, CASE WHEN c.source_id IS NULL THEN 0 ELSE 1 END AS corrected
+FROM strength_sets s LEFT JOIN strength_corrections c ON c.workout_id = s.workout_id AND c.source_id = s.source_id
+WHERE COALESCE(c.deleted, 0) = 0
+UNION ALL
+SELECT workout_id, source_id, 1000000 + set_no, set_no, exercise, -1, reps, weight_kg, NULL, NULL, 'manual', 0 FROM strength_manual_sets;
+
+`
   }
 ];

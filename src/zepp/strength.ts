@@ -38,7 +38,7 @@ export interface StrengthSetsResult {
   totals: { sets: number; reps: number; volume_kg: number };
 }
 
-export interface ParsedStrengthLap { sets: StrengthSet[]; malformed: number; ignored: number }
+export interface ParsedStrengthLap { sets: StrengthSet[]; sourceKeys: string[]; malformed: number; ignored: number }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -50,7 +50,8 @@ function num(value: string | undefined): number | undefined {
 
 /** Parse `data.lap`. Malformed rows are counted and skipped; rows with no reps (e.g. non-strength laps) are ignored. */
 export function parseStrengthLap(lap: unknown): ParsedStrengthLap {
-  const result: ParsedStrengthLap = { sets: [], malformed: 0, ignored: 0 };
+  const result: ParsedStrengthLap = { sets: [], sourceKeys: [], malformed: 0, ignored: 0 };
+  const parsedRows: Array<{ set: StrengthSet; sourceKey: string }> = [];
   if (typeof lap !== "string") return result;
   for (const raw of lap.split(";")) {
     if (raw.trim() === "") continue;
@@ -69,26 +70,29 @@ export function parseStrengthLap(lap: unknown): ParsedStrengthLap {
     const durationMs = num(c[COL.durationMs]);
     const durationS = durationMs !== undefined && durationMs > 0 ? durationMs / 1000 : num(c[COL.durationS]);
     const hr = num(c[COL.avgHr]);
-    result.sets.push({
+    parsedRows.push({ set: {
       set, exercise: strengthExerciseName(actionType), action_type: actionType, reps,
       weight_kg: weight !== undefined && weight > 0 && weight <= 1000 ? weight : null,
       duration_s: durationS !== undefined && durationS >= 0 && durationS <= 86_400 ? round1(durationS) : null,
       avg_hr_bpm: hr !== undefined && hr >= 20 && hr <= 250 ? Math.round(hr) : null
-    });
+    }, sourceKey: JSON.stringify(c.slice(1)) });
   }
-  result.sets.sort((a, b) => a.set - b.set);
+  parsedRows.sort((a, b) => a.set.set - b.set.set);
+  result.sets = parsedRows.map(row => row.set);
+  result.sourceKeys = parsedRows.map(row => row.sourceKey);
   return result;
 }
 
 export function rollupStrengthSets(sets: readonly StrengthSet[]): { exercises: StrengthExerciseSummary[]; totals: StrengthSetsResult["totals"] } {
-  const byType = new Map<number, StrengthExerciseSummary>();
+  const byType = new Map<string, StrengthExerciseSummary>();
   let totalReps = 0;
   let totalVolume = 0;
   for (const s of sets) {
-    let ex = byType.get(s.action_type);
+    const key = s.action_type < 0 ? `custom:${s.exercise}` : `type:${s.action_type}`;
+    let ex = byType.get(key);
     if (!ex) {
       ex = { exercise: s.exercise, action_type: s.action_type, sets: 0, total_reps: 0, volume_kg: 0, max_weight_kg: null };
-      byType.set(s.action_type, ex);
+      byType.set(key, ex);
     }
     ex.sets++;
     ex.total_reps += s.reps;

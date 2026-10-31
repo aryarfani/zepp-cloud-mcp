@@ -1,7 +1,7 @@
 {
   "name": "zepp-cloud-mcp",
   "version": "0.1.0",
-  "description": "Read-only MCP server for Amazfit / Zepp health and workout data, with OAuth 2.1, SQLite sync and a self-hosted dashboard.",
+  "description": "Self-hosted MCP server for Amazfit / Zepp health and workout data, with local strength-set corrections, OAuth 2.1, SQLite sync and a dashboard.",
   "license": "AGPL-3.0-or-later",
   "author": "Ary Arfani",
   "repository": {

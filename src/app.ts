@@ -5,6 +5,7 @@ import { parseConfig } from "./config";
 import { createZeppMcpServer } from "./mcp/server";
 import { createServices } from "./services";
 import type { OAuthProvider } from "./oauth";
+import type { LocalWorkoutAccess } from "./mcp/local-workouts";
 
 export interface AppDeps {
   env: Env;
@@ -13,6 +14,7 @@ export interface AppDeps {
   port?: number;
   /** Node server only: returns the local store/sync status for the `sync_status` tool. Omit to leave that tool out. */
   syncStatus?: () => unknown;
+  localWorkouts?: LocalWorkoutAccess;
   /** Node server only: handles /dashboard and /dashboard/* (the read-only web dashboard). Without it those paths are 404. */
   dashboard?: (request: Request) => Promise<Response>;
 }
@@ -53,7 +55,7 @@ export function createApp(deps: AppDeps): (request: Request) => Promise<Response
     catch (e: any) {
       return Response.json({ error: "Worker configuration is invalid", detail: e?.message }, { status: 500 });
     }
-    const handler = createMcpHandler(() => createZeppMcpServer(services, deps.syncStatus ? { syncStatus: deps.syncStatus } : {}), { route: "/mcp", corsOptions: false });
+    const handler = createMcpHandler(() => createZeppMcpServer(services, { ...(deps.syncStatus ? { syncStatus: deps.syncStatus } : {}), ...(deps.localWorkouts ? { localWorkouts: deps.localWorkouts } : {}) }), { route: "/mcp", corsOptions: false });
     const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
     return handler(request, env, ctx);
   };

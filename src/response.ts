@@ -2,7 +2,7 @@ import type { PublicStatus } from "./errors";
 import { InputError, ZeppError } from "./errors";
 
 export interface EnvelopeMeta {
-  source: "zepp_cloud";
+  source: "zepp_cloud" | "sqlite";
   source_scope?: "device" | "user_fused" | "unknown";
   fetched_at: string;
   timezone: string;

@@ -7,6 +7,7 @@ import { parseDateRange } from "../time";
 import { MAX_SERIES_LIMIT, REVIEWED_METRIC_IDS, SERIES_METRIC_IDS } from "../zepp/events";
 import { WORKOUT_SAMPLE_FIELDS } from "../zepp/workout-detail";
 import { buildZeppRequest } from "../zepp/endpoints";
+import type { LocalWorkoutAccess } from "./local-workouts";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 const rangeShape = { start_date: date, end_date: date } as const;
@@ -41,6 +42,7 @@ async function safe(services: Services, fn: () => Promise<unknown>) {
 export interface ZeppMcpExtras {
   /** Provided by the Node server only (needs the local SQLite store). When absent, `sync_status` is not registered. */
   syncStatus?: () => unknown;
+  localWorkouts?: LocalWorkoutAccess;
 }
 
 export function createZeppMcpServer(services: Services, extras: ZeppMcpExtras = {}): McpServer {
@@ -75,13 +77,16 @@ export function createZeppMcpServer(services: Services, extras: ZeppMcpExtras = 
   }, async ({ start_date, end_date }) => safe(services, () => services.getTrainingStatus(range(services, start_date, end_date))));
 
   server.registerTool("list_workouts", {
-    description: "List Zepp workouts in an inclusive date range. Activity type filtering is local and never changes the upstream URL. Ranges up to 366 days are supported; longer-than-31-day ranges are fetched in several upstream requests and merged, so they take a few seconds.",
-    inputSchema: z.object({ ...rangeShape, activity_type: z.string().min(1).max(80).optional(), limit: z.number().int().min(1).max(200).default(50) }), annotations
-  }, async ({ start_date, end_date, activity_type, limit }) => safe(services, () => services.listWorkouts(range(services, start_date, end_date), activity_type, limit)));
+    description: extras.localWorkouts ? "List local workouts for an inclusive date range. Stale or missing coverage may trigger a Zepp sync; inspect warnings for incomplete results." : "List Zepp workouts in an inclusive date range. Activity type filtering is local and never changes the upstream URL. Ranges up to 366 days are supported.",
+    inputSchema: z.object({ ...rangeShape, activity_type: z.string().min(1).max(80).optional(), limit: z.number().int().min(1).max(200).default(50) }), annotations: extras.localWorkouts ? { ...annotations, readOnlyHint: false } : annotations
+  }, async ({ start_date, end_date, activity_type, limit }) => safe(services, () => {
+    const parsed = range(services, start_date, end_date);
+    return extras.localWorkouts ? extras.localWorkouts.list(parsed.startDate, parsed.endDate, activity_type, limit) : services.listWorkouts(parsed, activity_type, limit);
+  }));
 
   server.registerTool("get_workout", {
-    description: "Get normalized summary/detail availability for one opaque workout ID returned by list_workouts.", inputSchema: z.object({ workout_id: z.string().min(1).max(180) }), annotations
-  }, async ({ workout_id }) => safe(services, () => services.getWorkout(workout_id)));
+    description: "Get normalized summary and locally known detail availability for one workout ID returned by list_workouts. Local reads may sync when stale.", inputSchema: z.object({ workout_id: z.string().min(1).max(180) }), annotations: extras.localWorkouts ? { ...annotations, readOnlyHint: false } : annotations
+  }, async ({ workout_id }) => safe(services, () => extras.localWorkouts ? extras.localWorkouts.get(workout_id) : services.getWorkout(workout_id)));
 
   server.registerTool("get_workout_samples", {
     description: "Get explicitly requested per-workout metric samples with deterministic downsampling and original/returned point counts.",
@@ -94,9 +99,38 @@ export function createZeppMcpServer(services: Services, extras: ZeppMcpExtras = 
   }, async ({ workout_id, max_points }) => safe(services, () => services.getWorkoutRoute(workout_id, max_points)));
 
   server.registerTool("get_strength_sets", {
-    description: "Get set-by-set details for one strength workout ID returned by list_workouts: exercise name, reps, weight (null for bodyweight), duration and average heart rate per set, plus per-exercise rollups (sets, total reps, volume in kg, max weight) and totals. Exercise names come from the owner's verified table first, then the bundled Gadgetbridge Zepp OS exercise catalog; ids in neither (and id 0, unassigned) are reported as unknown_<id>.",
-    inputSchema: z.object({ workout_id: z.string().min(1).max(180) }), annotations
-  }, async ({ workout_id }) => safe(services, () => services.getStrengthSets(workout_id)));
+    description: extras.localWorkouts ? "Get effective local strength sets, stable set IDs, exercise rollups, totals and unmatched correction conflicts. Null weight means bodyweight. May sync stale data from Zepp." : "Get strength sets, exercise rollups and totals for one Zepp workout. Null weight means bodyweight.",
+    inputSchema: z.object({ workout_id: z.string().min(1).max(180) }), annotations: extras.localWorkouts ? { ...annotations, readOnlyHint: false } : annotations
+  }, async ({ workout_id }) => safe(services, () => extras.localWorkouts ? extras.localWorkouts.sets(workout_id) : services.getStrengthSets(workout_id)));
+
+  if (extras.localWorkouts) {
+    const local = extras.localWorkouts;
+    const workoutId = z.string().min(1).max(180);
+    const setId = z.string().min(1).max(80);
+    const exercise = z.string().trim().min(1).max(120);
+    const reps = z.number().int().min(0).max(10000);
+    const weight = z.number().min(0).max(1000).nullable();
+    server.registerTool("create_strength_set", {
+      description: "Add a local strength set to an existing workout. weight_kg is null for bodyweight. Does not modify Zepp Cloud.",
+      inputSchema: z.object({ workout_id: workoutId, exercise, reps, weight_kg: weight }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    }, async ({ workout_id, exercise, reps, weight_kg }) => safe(services, () => local.create(workout_id, { exercise, reps, weight_kg })));
+    server.registerTool("update_strength_set", {
+      description: "Update an individual local set using its id from get_strength_sets. Omit unchanged fields; weight_kg null means bodyweight.",
+      inputSchema: z.object({ workout_id: workoutId, set_id: setId, exercise: exercise.optional(), reps: reps.optional(), weight_kg: weight.optional() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    }, async ({ workout_id, set_id, exercise, reps, weight_kg }) => safe(services, () => local.update(workout_id, set_id, { ...(exercise !== undefined ? { exercise } : {}), ...(reps !== undefined ? { reps } : {}), ...(weight_kg !== undefined ? { weight_kg } : {}) })));
+    server.registerTool("delete_strength_set", {
+      description: "Delete an individual local set using its id from get_strength_sets. This does not delete the original in Zepp Cloud.",
+      inputSchema: z.object({ workout_id: workoutId, set_id: setId }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false }
+    }, async ({ workout_id, set_id }) => safe(services, () => local.remove(workout_id, set_id)));
+    server.registerTool("discard_strength_conflict", {
+      description: "Permanently discard one unmatched local correction reported by get_strength_sets after you have reviewed or reapplied it. Does not alter current sets or Zepp Cloud.",
+      inputSchema: z.object({ workout_id: workoutId, conflict_id: setId }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false }
+    }, async ({ workout_id, conflict_id }) => safe(services, () => local.discardConflict(workout_id, conflict_id)));
+  }
 
   server.registerTool("get_metric_series", {
     description: "Get a normalized scalar time series for a reviewed metric. Ranges up to 366 days are supported; longer-than-31-day ranges are fetched in several upstream requests and merged, so they take a few seconds.",

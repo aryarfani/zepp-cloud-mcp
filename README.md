@@ -5,7 +5,7 @@
 <h1 align="center">Zepp Cloud MCP</h1>
 
 <p align="center">
-  <b>Your Amazfit / Zepp health and workout data for ChatGPT, Claude and Cursor, through a read-only MCP server that you host yourself. Comes with a dashboard.</b>
+  <b>Your Amazfit / Zepp health and workout data for ChatGPT, Claude and Cursor, through a self-hosted MCP server and dashboard.</b>
 </p>
 
 <p align="center">
@@ -28,9 +28,9 @@ Amazfit watches send a lot of data to Zepp Cloud: sleep stages, HRV, readiness, 
 
 ## Features
 
-- **19 read-only MCP tools** for daily summary, sleep, heart rate, recovery (HRV, readiness, stress, SpO2), training status (load, VO2max), workouts, per-workout samples, GPS routes, strength sets, weight, blood pressure, Hybrid Charge, emotion/stress events and sync status.
+- **MCP tools** for daily summary, sleep, heart rate, recovery (HRV, readiness, stress, SpO2), training status (load, VO2max), workouts, per-workout samples, GPS routes, strength sets, weight, blood pressure, Hybrid Charge, emotion/stress events and sync status. The Node server also offers local strength-set corrections.
 - **Long ranges.** Date ranges up to 366 days. Ranges longer than Zepp's 31-day window are split into several upstream requests and merged.
-- **Strength training.** Set-by-set exercises, reps, weight and volume, mapped to primary and secondary muscle groups.
+- **Strength training.** Set-by-set exercises, reps, weight and volume, mapped to primary and secondary muscle groups. On Node, MCP clients can add, edit or delete local sets; the dashboard shows the corrected data.
 - **Two deployment targets:**
   - **Node server** (VPS, home server) with an OAuth 2.1 authorization server, a dashboard, and a daily SQLite sync.
   - **Cloudflare Worker**: stateless, with a static bearer token and no database.
@@ -197,7 +197,7 @@ More detail is in [docs/MCP_SETUP.md](docs/MCP_SETUP.md).
 
 ## MCP tools
 
-All tools are read-only. Each call fetches live from Zepp Cloud; only `sync_status` reads the local database. Dates are local `YYYY-MM-DD` in `USER_TIMEZONE`.
+On Node, workout and strength-set reads use the SQLite store and may sync stale data. Four additional tools modify local strength sets; they never write to Zepp Cloud. Other health-data reads still use Zepp Cloud. The Worker remains read-only. Dates are local `YYYY-MM-DD` in `USER_TIMEZONE`.
 
 | Tool | What it returns |
 |---|---|
@@ -220,6 +220,8 @@ All tools are read-only. Each call fetches live from Zepp Cloud; only `sync_stat
 | `get_emotion_events` | Spot-stress and emotion events |
 | `list_event_types` | Discovery: known Zepp streams and whether each has data |
 | `sync_status` | *(Node only)* local store coverage and last sync result |
+| `create_strength_set`, `update_strength_set`, `delete_strength_set` | *(Node only)* add, correct or remove an individual local set |
+| `discard_strength_conflict` | *(Node only)* discard a reviewed unmatched local correction |
 
 Range tools accept up to 366 days.
 
@@ -233,6 +235,7 @@ flowchart LR
     O[OAuth 2.1<br/>/authorize /token /register] --> M
     S[Daily sync] --> DB[(SQLite<br/>node:sqlite)]
     DB --> D[Dashboard /dashboard]
+    DB <--> M
     C --> S
   end
   Z --> C

@@ -1,6 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createHash, randomUUID } from "node:crypto";
+import { InputError } from "../errors";
 import type { BloodPressureEntry } from "../zepp/blood-pressure";
 import type { ChargeInsight, ChargeSample } from "../zepp/charge";
 import type { EmotionEntry } from "../zepp/emotion";
@@ -217,17 +219,151 @@ ON CONFLICT(workout_id) DO UPDATE SET
       n(summary.training_load), n(summary.vo2max_ml_kg_min), summary.source_scope, JSON.stringify(summary), JSON.stringify(raw), updatedAt);
   }
 
-  /** Replace all stored sets for a workout and mark its detail as checked (one transaction, safe to repeat). */
-  replaceStrengthSets(workoutId: string, sets: readonly StrengthSet[]): number {
-    const insert = this.db.prepare(`
-INSERT INTO strength_sets (workout_id, seq, set_no, exercise, action_type, reps, weight_kg, duration_s, avg_hr_bpm)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  /** Refresh source rows without transferring corrections to a different or ambiguous set. */
+  replaceStrengthSets(workoutId: string, sets: readonly StrengthSet[], sourceKeys?: readonly string[]): number {
+    return this.replaceStrengthSetsIfUnchanged(workoutId, sets, sourceKeys) as number;
+  }
+
+  strengthSourceRevision(workoutId: string): number {
+    return Number(this.db.prepare("SELECT revision FROM strength_source_revisions WHERE workout_id = ?").get(workoutId)?.revision ?? 0);
+  }
+
+  replaceStrengthSetsIfUnchanged(workoutId: string, sets: readonly StrengthSet[], sourceKeys?: readonly string[], expectedRevision?: number): number | null {
+    if (sourceKeys && sourceKeys.length !== sets.length) throw new Error("Strength source keys do not match the set count");
+    type SourceRow = { source_id: string; source_fingerprint: string | null };
     return this.transaction(() => {
+      if (expectedRevision !== undefined && this.strengthSourceRevision(workoutId) !== expectedRevision) return null;
+      const old = this.db.prepare("SELECT source_id, source_fingerprint FROM strength_sets WHERE workout_id = ?").all(workoutId) as unknown as SourceRow[];
+      const oldByKey = new Map<string, SourceRow[]>();
+      for (const row of old) if (row.source_fingerprint) { const key = row.source_fingerprint; oldByKey.set(key, [...(oldByKey.get(key) ?? []), row]); }
+      const keys = sets.map((_, i) => sourceKeys ? createHash("sha256").update(sourceKeys[i]!).digest("hex") : null);
+      const counts = new Map<string, number>();
+      for (const key of keys) if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
       this.db.prepare("DELETE FROM strength_sets WHERE workout_id = ?").run(workoutId);
-      sets.forEach((s, seq) => insert.run(workoutId, seq, s.set, s.exercise, s.action_type, s.reps, n(s.weight_kg), n(s.duration_s), n(s.avg_hr_bpm)));
+      const insert = this.db.prepare("INSERT INTO strength_sets (workout_id, seq, set_no, exercise, action_type, reps, weight_kg, duration_s, avg_hr_bpm, source_id, source_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      sets.forEach((s, seq) => {
+        const key = keys[seq] ?? null; const matches = key ? oldByKey.get(key) ?? [] : [];
+        const id = key && counts.get(key) === 1 && matches.length === 1 ? matches[0]!.source_id : randomUUID();
+        insert.run(workoutId, seq, s.set, s.exercise, s.action_type, s.reps, n(s.weight_kg), n(s.duration_s), n(s.avg_hr_bpm), id, key);
+      });
       this.db.prepare("UPDATE workouts SET strength_checked = 1 WHERE workout_id = ?").run(workoutId);
+      this.db.prepare("INSERT INTO strength_source_revisions (workout_id, revision) VALUES (?, 1) ON CONFLICT(workout_id) DO UPDATE SET revision = revision + 1").run(workoutId);
       return sets.length;
     });
+  }
+
+  effectiveStrengthSets(workoutId: string): Array<StrengthSet & { id: string; origin: "zepp" | "manual"; corrected: boolean }> {
+    const rows = this.db.prepare("SELECT source_id AS id, set_no AS 'set', exercise, action_type, reps, weight_kg, duration_s, avg_hr_bpm, origin, corrected FROM effective_strength_sets WHERE workout_id = ? ORDER BY seq").all(workoutId) as unknown as Array<StrengthSet & { id: string; origin: "zepp" | "manual"; corrected: number }>;
+    return rows.map(row => ({ ...row, corrected: row.corrected === 1 }));
+  }
+
+  strengthConflicts(workoutId: string): string[] {
+    return (this.db.prepare("SELECT c.source_id FROM strength_corrections c LEFT JOIN strength_sets s ON s.workout_id = c.workout_id AND s.source_id = c.source_id WHERE c.workout_id = ? AND s.source_id IS NULL").all(workoutId) as unknown as Array<{ source_id: string }>).map(row => row.source_id);
+  }
+
+  strengthConflictDetails(workoutId: string): Array<{ id: string; original: unknown; exercise: string | null; reps: number | null; weight_kg: number | null; weight_set: boolean; deleted: boolean }> {
+    const rows = this.db.prepare("SELECT c.* FROM strength_corrections c LEFT JOIN strength_sets s ON s.workout_id = c.workout_id AND s.source_id = c.source_id WHERE c.workout_id = ? AND s.source_id IS NULL").all(workoutId);
+    return rows.map(row => ({ id: String(row.source_id), original: JSON.parse(String(row.source_json)), exercise: row.exercise === null ? null : String(row.exercise), reps: row.reps === null ? null : Number(row.reps), weight_kg: row.weight_kg === null ? null : Number(row.weight_kg), weight_set: Number(row.weight_set) === 1, deleted: Number(row.deleted) === 1 }));
+  }
+
+  discardStrengthConflict(workoutId: string, id: string): void {
+    const result = this.db.prepare("DELETE FROM strength_corrections WHERE workout_id = ? AND source_id = ? AND NOT EXISTS (SELECT 1 FROM strength_sets s WHERE s.workout_id = ? AND s.source_id = ?)").run(workoutId, id, workoutId, id);
+    if (!result.changes) throw new InputError("Unmatched correction not found");
+  }
+
+  localWorkout(workoutId: string): { summary: WorkoutSummary; strengthChecked: boolean } | null {
+    const row = this.db.prepare("SELECT summary_json, strength_checked FROM workouts WHERE workout_id = ?").get(workoutId);
+    return row ? { summary: JSON.parse(String(row.summary_json)) as WorkoutSummary, strengthChecked: Number(row.strength_checked) === 1 } : null;
+  }
+
+  localWorkoutAvailableDetail(workoutId: string): string[] {
+    const row = this.db.prepare("SELECT analysis_json FROM workout_details WHERE workout_id = ? AND status = 'ok'").get(workoutId);
+    if (!row || typeof row.analysis_json !== "string") return [];
+    let analysis: WorkoutAnalysis;
+    try { analysis = JSON.parse(row.analysis_json) as WorkoutAnalysis; } catch { return []; }
+    const details: string[] = [];
+    const series = analysis.series;
+    for (const [key, name] of [["hr_bpm", "heart_rate"], ["pace_s_km", "pace"], ["cadence_spm", "cadence"], ["alt_m", "elevation"]] as const) {
+      if (Array.isArray(series?.[key]) && series[key].some(value => value !== null)) details.push(name);
+    }
+    if (analysis.route?.points?.length) details.push("route");
+    return details;
+  }
+
+  localWorkouts(start: string, end: string, activityType: string | undefined, limit: number): WorkoutSummary[] {
+    const rows = this.db.prepare("SELECT summary_json FROM workouts WHERE started_date >= ? AND started_date <= ? AND (? IS NULL OR activity_type = ?) ORDER BY started_at DESC LIMIT ?")
+      .all(start, end, activityType?.trim().toLowerCase() || null, activityType?.trim().toLowerCase() || null, limit);
+    return rows.map(row => JSON.parse(String(row.summary_json)) as WorkoutSummary);
+  }
+
+  recordWorkoutCoverage(start: string, end: string, fetchedAt: string): void {
+    this.db.prepare("INSERT INTO workout_sync_coverage VALUES (?, ?, ?) ON CONFLICT(start_date, end_date) DO UPDATE SET fetched_at = excluded.fetched_at").run(start, end, fetchedAt);
+  }
+
+  workoutCoverage(start: string, end: string, since: string): boolean {
+    const rows = this.db.prepare("SELECT start_date, end_date FROM workout_sync_coverage WHERE fetched_at >= ? AND end_date >= ? AND start_date <= ? ORDER BY start_date, end_date DESC").all(since, start, end) as unknown as Array<{ start_date: string; end_date: string }>;
+    let cursor = start;
+    for (const row of rows) {
+      if (row.start_date > cursor) return false;
+      if (row.end_date >= end) return true;
+      if (row.end_date >= cursor) {
+        const date = new Date(`${row.end_date}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); cursor = date.toISOString().slice(0, 10);
+      }
+    }
+    return false;
+  }
+
+  strengthDetailRefreshedAt(workoutId: string): string | null {
+    const row = this.db.prepare("SELECT fetched_at FROM strength_detail_refresh WHERE workout_id = ?").get(workoutId);
+    return row ? String(row.fetched_at) : null;
+  }
+
+  markStrengthDetailRefreshed(workoutId: string, at: string): void {
+    this.db.prepare("INSERT INTO strength_detail_refresh VALUES (?, ?) ON CONFLICT(workout_id) DO UPDATE SET fetched_at = excluded.fetched_at").run(workoutId, at);
+  }
+
+  private validateStrengthChanges(changes: { exercise?: string; reps?: number; weight_kg?: number | null }): void {
+    if (changes.exercise !== undefined && (!changes.exercise.trim() || changes.exercise.length > 120)) throw new InputError("Invalid exercise");
+    if (changes.reps !== undefined && (!Number.isInteger(changes.reps) || changes.reps < 0 || changes.reps > 10000)) throw new InputError("Invalid reps");
+    if (changes.weight_kg !== undefined && changes.weight_kg !== null && (!Number.isFinite(changes.weight_kg) || changes.weight_kg < 0 || changes.weight_kg > 1000)) throw new InputError("Invalid weight");
+  }
+
+  createStrengthSet(workoutId: string, changes: { exercise: string; reps: number; weight_kg: number | null }): StrengthSet & { id: string; origin: "zepp" | "manual"; corrected: boolean } {
+    this.validateStrengthChanges(changes);
+    const workout = this.db.prepare("SELECT zepp_type FROM workouts WHERE workout_id = ?").get(workoutId);
+    if (!workout || Number(workout.zepp_type) !== 52) throw new InputError("Strength workout not found");
+    const id = randomUUID();
+    const row = this.db.prepare("SELECT COALESCE(MAX(set_no), -1) + 1 AS next FROM effective_strength_sets WHERE workout_id = ?").get(workoutId);
+    this.db.prepare("INSERT INTO strength_manual_sets (workout_id, source_id, set_no, exercise, reps, weight_kg) VALUES (?, ?, ?, ?, ?, ?)").run(workoutId, id, Number(row!.next), changes.exercise.trim(), changes.reps, changes.weight_kg);
+    return this.effectiveStrengthSets(workoutId).find(s => s.id === id)!;
+  }
+
+  updateStrengthSet(workoutId: string, id: string, changes: { exercise?: string; reps?: number; weight_kg?: number | null }): void {
+    if (!Object.keys(changes).length) throw new InputError("No changes provided");
+    this.validateStrengthChanges(changes);
+    const existing = this.effectiveStrengthSets(workoutId).find(row => row.id === id);
+    if (!existing) throw new InputError("Strength set not found");
+    const manual = this.db.prepare("SELECT 1 FROM strength_manual_sets WHERE workout_id = ? AND source_id = ?").get(workoutId, id);
+    if (manual) {
+      this.db.prepare("UPDATE strength_manual_sets SET exercise = ?, reps = ?, weight_kg = ? WHERE workout_id = ? AND source_id = ?").run(changes.exercise?.trim() ?? existing.exercise, changes.reps ?? existing.reps, changes.weight_kg === undefined ? existing.weight_kg : changes.weight_kg, workoutId, id);
+      return;
+    }
+    const source = this.db.prepare("SELECT set_no, exercise, action_type, reps, weight_kg, duration_s, avg_hr_bpm FROM strength_sets WHERE workout_id = ? AND source_id = ?").get(workoutId, id);
+    this.db.prepare(`INSERT INTO strength_corrections (workout_id, source_id, source_json, exercise, reps, weight_kg, weight_set)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(workout_id, source_id) DO UPDATE SET
+      exercise = COALESCE(excluded.exercise, exercise), reps = COALESCE(excluded.reps, reps),
+      weight_kg = CASE WHEN excluded.weight_set = 1 THEN excluded.weight_kg ELSE weight_kg END,
+      weight_set = MAX(weight_set, excluded.weight_set)`)
+      .run(workoutId, id, JSON.stringify(source), changes.exercise?.trim() ?? null, changes.reps ?? null, changes.weight_kg ?? null, changes.weight_kg !== undefined ? 1 : 0);
+  }
+
+  deleteStrengthSet(workoutId: string, id: string): void {
+    if (!this.effectiveStrengthSets(workoutId).some(row => row.id === id)) throw new InputError("Strength set not found");
+    const removed = this.db.prepare("DELETE FROM strength_manual_sets WHERE workout_id = ? AND source_id = ?").run(workoutId, id);
+    if (!removed.changes) {
+      const source = this.db.prepare("SELECT set_no, exercise, action_type, reps, weight_kg, duration_s, avg_hr_bpm FROM strength_sets WHERE workout_id = ? AND source_id = ?").get(workoutId, id);
+      this.db.prepare("INSERT INTO strength_corrections (workout_id, source_id, source_json, deleted) VALUES (?, ?, ?, 1) ON CONFLICT(workout_id, source_id) DO UPDATE SET deleted = 1").run(workoutId, id, JSON.stringify(source));
+    }
   }
 
   /**
@@ -439,7 +575,7 @@ UPDATE sync_runs SET finished_at = ?, ok = 0, status = 'interrupted', error_kind
   }
 
   stats(): StoreStats {
-    const sets = this.db.prepare("SELECT COUNT(*) AS rows, COUNT(DISTINCT workout_id) AS workouts FROM strength_sets").get() as { rows: number; workouts: number };
+    const sets = this.db.prepare("SELECT COUNT(*) AS rows, COUNT(DISTINCT workout_id) AS workouts FROM effective_strength_sets").get() as { rows: number; workouts: number };
     const runs = this.db.prepare("SELECT COUNT(*) AS rows FROM sync_runs").get() as { rows: number };
     const streams = this.db.prepare("SELECT COUNT(*) AS rows, COALESCE(SUM(status = 'has_data'), 0) AS with_data, MAX(checked_at) AS checked_at FROM event_streams").get() as
       { rows: number; with_data: number; checked_at: string | null };

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ZeppError } from "../../src/errors";
 import { ZeppStore } from "../../src/store/store";
+import { MIGRATIONS } from "../../src/store/migrations";
 import { parseSyncConfig } from "../../src/sync/config";
 import { createSyncService } from "../../src/sync/service";
 import { addIsoDays, runSync, type SyncOptions } from "../../src/sync/sync";
@@ -105,6 +106,13 @@ describe("runSync with a mocked Zepp client", () => {
     expect(store.isStrengthChecked(STRENGTH_ID)).toBe(true);
   });
 
+  it("does not treat an empty strength detail as a complete source snapshot", async () => {
+    const store = memStore();
+    const result = await runSync(mockCtx({ detail: { data: { time: "0", lap: "" } } }).ctx, store, opts(), "manual", { days: 5 });
+    expect(result.counts.warnings).toBeGreaterThan(0);
+    expect(store.isStrengthChecked(STRENGTH_ID)).toBe(false);
+  });
+
   it("records an unexpected internal error instead of crashing", async () => {
     const store = memStore();
     const { ctx } = mockCtx();
@@ -132,7 +140,7 @@ describe("sync service", () => {
       enabled: true, running: false,
       last_run: { ok: true, status: "ok", trigger: "manual" },
       tables: { workouts: { rows: 2 }, strength_sets: { rows: 4, workouts: 1 } },
-      db: { schema_version: 4 }
+      db: { schema_version: MIGRATIONS.at(-1)!.version }
     });
     expect(status.last_success_at).toBeTruthy();
     expect(status.schedule.timezone).toBe(config.USER_TIMEZONE);
